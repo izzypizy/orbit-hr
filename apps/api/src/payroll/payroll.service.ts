@@ -79,7 +79,9 @@ export class PayrollService implements OnModuleInit {
   }
 
   private calculate(e: Employee, period: string): Payslip {
-    const dailyRate = e.basicSalary / WORKING_DAYS_PER_MONTH;
+    // Increments approved in reward management apply from their effective date
+    const basic = this.db.basicSalaryOn(e.id, `${period}-31`);
+    const dailyRate = basic / WORKING_DAYS_PER_MONTH;
 
     const overtimeHours = this.db.overtimeRequests
       .filter((o) => o.employeeId === e.id && o.status === 'APPROVED' && o.date.startsWith(period))
@@ -96,10 +98,21 @@ export class PayrollService implements OnModuleInit {
       .filter((c) => c.employeeId === e.id && c.status === 'PAID' && c.paidAt?.startsWith(period))
       .reduce((s, c) => s + c.totalAmount, 0));
 
-    const grossPay = round2(e.basicSalary + FIXED_ALLOWANCE + overtimePay - unpaidLeaveDeduction);
-    const statutoryWage = e.basicSalary + FIXED_ALLOWANCE - unpaidLeaveDeduction;
+    // Performance bonus from approved rewards paid in this month
+    const bonus = round2(this.db.rewards
+      .filter((r) => r.employeeId === e.id && r.bonusAmount > 0)
+      .filter((r) => {
+        const c = this.db.cycle(r.cycleId);
+        return c.rewardStatus === 'APPROVED' && c.payoutPeriod === period;
+      })
+      .reduce((s, r) => s + r.bonusAmount, 0));
+
+    const grossPay = round2(basic + FIXED_ALLOWANCE + overtimePay + bonus - unpaidLeaveDeduction);
+    const statutoryWage = basic + FIXED_ALLOWANCE - unpaidLeaveDeduction;
     const capped = Math.min(statutoryWage, SOCSO_EIS_WAGE_CEILING);
-    const epfEmployee = round2(statutoryWage * EPF_EMPLOYEE);
+    // EPF is due on bonuses; SOCSO and EIS are not
+    const epfWage = statutoryWage + bonus;
+    const epfEmployee = round2(epfWage * EPF_EMPLOYEE);
     const socso = round2(capped * SOCSO_EMPLOYEE);
     const eis = round2(capped * EIS_EMPLOYEE);
 
@@ -108,10 +121,11 @@ export class PayrollService implements OnModuleInit {
       employeeId: e.id,
       period,
       status: 'DRAFT',
-      basic: e.basicSalary,
+      basic,
       allowance: FIXED_ALLOWANCE,
       overtimeHours,
       overtimePay,
+      bonus,
       unpaidLeaveDays,
       unpaidLeaveDeduction,
       grossPay,
@@ -120,7 +134,7 @@ export class PayrollService implements OnModuleInit {
       eis,
       claimsReimbursed,
       netPay: round2(grossPay - epfEmployee - socso - eis + claimsReimbursed),
-      epfEmployer: round2(statutoryWage * EPF_EMPLOYER(statutoryWage)),
+      epfEmployer: round2(epfWage * EPF_EMPLOYER(statutoryWage)),
       generatedAt: now(),
     };
   }

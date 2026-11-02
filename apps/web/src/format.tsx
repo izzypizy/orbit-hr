@@ -41,6 +41,16 @@ const STATUS: Record<string, [string, string]> = {
   REJECTED: ['Rejected', 'red'],
   DRAFT: ['Draft', 'default'],
   PUBLISHED: ['Published', 'green'],
+  IN_PROGRESS: ['Tracking KPIs', 'blue'],
+  TRACKING: ['Tracking KPIs', 'blue'],
+  REVIEW: ['Review phase', 'gold'],
+  CLOSED: ['Closed', 'default'],
+  ON_TRACK: ['On track', 'green'],
+  AT_RISK: ['At risk', 'orange'],
+  OFF_TRACK: ['Off track', 'red'],
+  NO_DATA: ['No update', 'default'],
+  NOT_STARTED: ['Not started', 'default'],
+  SUBMITTED: ['Awaiting Finance', 'gold'],
   SELF_REVIEW: ['Self-review', 'gold'],
   MANAGER_REVIEW: ['Manager review', 'orange'],
   COMPLETED: ['Completed', 'green'],
@@ -58,4 +68,13 @@ export const StatusTag = ({ status }: { status: string }) => {
   return <Tag color={color}>{label}</Tag>;
 };
 
-export const fmtPeriod = (period: string) => dayjs(`${period}-01`).format('MMMM YYYY');
+/** KPI value with its unit, e.g. "MYR 50,000", "92%", "14 tickets". */
+export const fmtKpi = (value: number | null, unit: string) => {
+  if (value == null) return '—';
+  const n = value.toLocaleString('en-MY', { maximumFractionDigits: 2 });
+  if (unit === '%') return `${n}%`;
+  if (unit === 'MYR') return `MYR ${n}`;
+  return `${n} ${unit}`;
+};
+
+export const fmtPeriod =(period: string) => dayjs(`${period}-01`).format('MMMM YYYY');

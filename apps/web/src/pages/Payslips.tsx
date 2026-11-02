@@ -29,13 +29,14 @@ export function PayslipView({ p }: { p: Payslip }) {
           {line('Basic salary', p.basic)}
           {line('Fixed allowance', p.allowance)}
           {line(`Overtime (${p.overtimeHours} h)`, p.overtimePay)}
+          {p.bonus > 0 && line('Performance bonus', p.bonus)}
           {line(`Unpaid leave (${p.unpaidLeaveDays} d)`, p.unpaidLeaveDeduction, true)}
           <Divider style={{ margin: '8px 0' }} />
           <Row justify="space-between"><Col><b>Gross pay</b></Col><Col><b>{fmtMoney(p.grossPay)}</b></Col></Row>
         </Col>
         <Col xs={24} md={12}>
           <Divider orientation="left" plain>Deductions</Divider>
-          {line('EPF (employee 11%)', p.epfEmployee, true)}
+          {line(`EPF (employee 11%${p.bonus > 0 ? ', incl. bonus' : ''})`, p.epfEmployee, true)}
           {line('SOCSO', p.socso, true)}
           {line('EIS', p.eis, true)}
           <Divider orientation="left" plain>Reimbursements</Divider>

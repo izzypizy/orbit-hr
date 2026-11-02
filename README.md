@@ -44,9 +44,9 @@ All demo accounts use the password `Password123!`.
 | employee@demo.local | Employee (Siti) | Leave, claims, clock in/out, overtime, payslips, self-review, training |
 | employee2@demo.local | Employee (Kumar) | Same, second team member |
 | newhire@demo.local | Employee (Farah) | New hire, part-way through onboarding |
-| manager@demo.local | Manager (Daniel) | + approve team leave, claims (step 1) and overtime; team attendance; review the team |
-| hr@demo.local | HR Admin (Aisha) | + add employees, on/offboarding, announcements, holidays, payroll |
-| finance@demo.local | Finance (Priya) | + approve claims (step 2), mark claims paid, payroll |
+| manager@demo.local | Manager (Daniel) | + approve team leave, claims (step 1) and overtime; team attendance; set team KPIs, monitor progress, review the team |
+| hr@demo.local | HR Admin (Aisha) | + add employees, on/offboarding, announcements, holidays, performance cycles, calculate rewards, payroll |
+| finance@demo.local | Finance (Priya) | + approve claims (step 2), mark claims paid, approve rewards, payroll |
 
 ## Features
 
@@ -76,8 +76,20 @@ All demo accounts use the password `Password123!`.
 **Talent**
 - Onboarding/offboarding checklists; each task belongs to HR, the manager, the employee or Finance
 - Adding an employee starts their onboarding checklist automatically
-- Performance reviews: weighted KPIs → self-review → manager review → overall rating
 - Training records with certificate expiry warnings
+
+**Performance & KPIs**
+- Performance cycles run by HR: Tracking KPIs → Review phase → Closed
+- Measurable KPIs: target, unit, "at least" or "at most", and whether it adds up over the cycle (sales) or is a level to keep (uptime); weights add up to 100%
+- Progress check-ins with history; each KPI shows achievement (% of target, capped at 150%) and pace (on track, at risk, off track) against where it should be by now
+- Team monitor for managers and HR: achievement, KPIs at risk, people without KPIs
+- Suggested rating from achievement (110%+ = 5, 100% = 4, 85% = 3, 70% = 2), then self-review and manager review give the final rating
+
+**Rewards (bonus and increment)**
+- Reward bands per cycle map the final rating to bonus months and increment %
+- HR calculates rewards for a closed cycle, adjusts individuals with a reason, and submits; Finance approves or sends back
+- Bonuses are pro-rated for people who joined mid-cycle and paid in the chosen payroll month (EPF applies; SOCSO/EIS don't)
+- New salaries apply in payroll from the effective date; employees see a reward letter under Performance → My rewards
 
 ## Structure
 
@@ -87,7 +99,8 @@ apps/
     src/data/           mock-data.ts (seed), mock-db.service.ts (in-memory store), types.ts
     src/common/         JWT auth guard, @Roles, validation and date helpers
     src/leave/, src/claims/, src/attendance/, src/payroll/
-    src/talent/         checklists, reviews, training
+    src/talent/         checklists, reviews (KPIs, check-ins, ratings), training
+    src/performance/    cycles and KPI monitoring, KPI scoring rules, rewards
     src/employees/, src/announcements/, src/holidays/
   web/                  React + Vite + Ant Design
     src/pages/          one file per screen

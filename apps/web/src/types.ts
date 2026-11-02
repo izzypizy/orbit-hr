@@ -87,6 +87,7 @@ export interface Payslip {
   allowance: number;
   overtimeHours: number;
   overtimePay: number;
+  bonus: number;
   unpaidLeaveDays: number;
   unpaidLeaveDeduction: number;
   grossPay: number;
@@ -119,21 +120,74 @@ export interface Checklist {
   tasks: { id: number; title: string; owner: TaskOwner; done: boolean; doneAt: string | null; doneByName: string | null; canComplete: boolean }[];
 }
 
+export type PaceStatus = 'ON_TRACK' | 'AT_RISK' | 'OFF_TRACK' | 'NO_DATA';
+
 export interface Kpi {
   id: number;
   title: string;
   weight: number;
+  unit: string;
+  target: number;
+  direction: 'HIGHER' | 'LOWER';
+  tracking: 'CUMULATIVE' | 'LEVEL';
+  actual: number | null;
+  achievement: number; // % of target
+  suggestedRating: number;
+  pace: PaceStatus;
   selfRating: number | null;
   selfComment: string | null;
   managerRating: number | null;
   managerComment: string | null;
 }
 
+export interface PaceCounts {
+  onTrack: number;
+  atRisk: number;
+  offTrack: number;
+  noData: number;
+}
+
+export interface RewardBand {
+  minRating: number;
+  label: string;
+  bonusMonths: number;
+  incrementPct: number;
+}
+
+export interface Cycle {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: 'TRACKING' | 'REVIEW' | 'CLOSED';
+  elapsed: number; // % of the cycle passed
+  reviews: number;
+  completed: number;
+  rewardBands: RewardBand[];
+  rewardStatus: 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED';
+  payoutPeriod: string | null;
+  effectiveDate: string | null;
+  rewardDecidedAt: string | null;
+  rewardComment: string | null;
+}
+
+export interface KpiCheckIn {
+  id: number;
+  kpiId: number;
+  date: string;
+  value: number;
+  note: string | null;
+  by: string;
+}
+
 export interface Review {
   id: number;
-  cycle: string;
-  status: 'SELF_REVIEW' | 'MANAGER_REVIEW' | 'COMPLETED';
+  cycle: Pick<Cycle, 'id' | 'name' | 'status' | 'startDate' | 'endDate'>;
+  status: 'IN_PROGRESS' | 'SELF_REVIEW' | 'MANAGER_REVIEW' | 'COMPLETED';
   kpis: Kpi[];
+  achievement: number;
+  suggestedRating: number;
+  pace: PaceCounts;
   overallRating: number | null;
   managerSummary: string | null;
   reviewerId: number;
@@ -141,6 +195,46 @@ export interface Review {
   employee: Employee;
   createdAt: string;
   completedAt: string | null;
+  checkIns?: KpiCheckIn[];
+}
+
+export interface MonitorRow {
+  reviewId: number;
+  status: Review['status'];
+  overallRating: number | null;
+  employee: Employee;
+  lastCheckIn: string | null;
+  kpis: Kpi[];
+  achievement: number;
+  suggestedRating: number;
+  pace: PaceCounts;
+}
+
+export interface Reward {
+  id: number;
+  cycle: string;
+  employee: Employee;
+  rating: number;
+  band: string;
+  basicSalary: number;
+  prorate: number;
+  bonusMonths: number;
+  bonusAmount: number;
+  incrementPct: number;
+  incrementAmount: number;
+  newSalary: number;
+  adjusted: boolean;
+  note: string | null;
+  payoutPeriod: string;
+  effectiveDate: string;
+}
+
+export interface RewardSummary {
+  cycle: Cycle & { decidedBy: string | null };
+  rewards: Reward[];
+  missing: { employee: Employee; reason: string }[];
+  totals: { employees: number; bonus: number; monthlyIncrement: number; annualIncrement: number; avgIncrementPct: number };
+  distribution: { label: string; count: number }[];
 }
 
 export interface Training {

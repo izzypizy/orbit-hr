@@ -1,12 +1,22 @@
 import * as bcrypt from 'bcryptjs';
 import { countWorkingDays, eachDate, fromLocal } from '../common/util';
 import {
-  Announcement, AttendanceRecord, Checklist, Claim, ClaimCategory, ClaimItem, Department, Employee, Kpi,
-  LeaveBalance, LeaveRequest, LeaveType, OvertimeRequest, PublicHoliday, Review, TaskOwner, Training,
+  Announcement, AttendanceRecord, Checklist, Claim, ClaimCategory, ClaimItem, Department, Employee, Kpi, KpiCheckIn,
+  LeaveBalance, LeaveRequest, LeaveType, OvertimeRequest, PerformanceCycle, PublicHoliday, Review, Reward, RewardBand,
+  TaskOwner, Training,
 } from './types';
 
 // Every demo account uses this password.
 export const DEMO_PASSWORD = 'Password123!';
+
+/** Bonus and increment by final rating. HR can change these per cycle before calculating rewards. */
+export const DEFAULT_REWARD_BANDS: RewardBand[] = [
+  { minRating: 4.5, label: 'Outstanding', bonusMonths: 3, incrementPct: 8 },
+  { minRating: 3.5, label: 'Exceeds expectations', bonusMonths: 2, incrementPct: 6 },
+  { minRating: 2.5, label: 'Meets expectations', bonusMonths: 1, incrementPct: 4 },
+  { minRating: 1.5, label: 'Needs improvement', bonusMonths: 0, incrementPct: 1.5 },
+  { minRating: 0, label: 'Unsatisfactory', bonusMonths: 0, incrementPct: 0 },
+];
 
 const YEAR = 2026;
 
@@ -183,25 +193,95 @@ export function createMockData() {
     }),
   }];
 
-  let kpiId = 0;
-  const kpis = (rows: [string, number, number?, number?][]): Kpi[] =>
-    rows.map(([title, weight, selfRating, managerRating]) => ({
-      id: ++kpiId, title, weight,
-      selfRating: selfRating ?? null, selfComment: selfRating ? 'On track' : null,
-      managerRating: managerRating ?? null, managerComment: managerRating ? 'Good progress' : null,
-    }));
-  const review = (id: number, employeeId: number, reviewerId: number, cycle: string, status: Review['status'], k: Kpi[], extra: Partial<Review> = {}): Review => ({
-    id, employeeId, reviewerId, cycle, status, kpis: k, overallRating: null, managerSummary: null,
-    createdAt: `${YEAR}-10-15T01:00:00.000Z`, completedAt: null, ...extra,
+  // Last year's cycle is closed with final ratings, ready for HR to calculate rewards.
+  // This year's cycle is mid-way: KPIs set, progress being logged.
+  const cycle = (id: number, year: number, status: PerformanceCycle['status']): PerformanceCycle => ({
+    id, name: `${year} Annual`, startDate: `${year}-01-01`, endDate: `${year}-12-31`, status,
+    rewardBands: DEFAULT_REWARD_BANDS.map((b) => ({ ...b })),
+    rewardStatus: 'NOT_STARTED', payoutPeriod: null, effectiveDate: null, rewardDecidedBy: null, rewardDecidedAt: null, rewardComment: null,
   });
+  const cycles: PerformanceCycle[] = [cycle(1, YEAR - 1, 'CLOSED'), cycle(2, YEAR, 'TRACKING')];
+
+  // [title, unit, target, direction, tracking, weight, actual, selfRating, managerRating]
+  type KpiRow = [string, string, number, Kpi['direction'], Kpi['tracking'], number, number | null, number?, number?];
+  let kpiId = 0;
+  const kpis = (rows: KpiRow[]): Kpi[] =>
+    rows.map(([title, unit, target, direction, tracking, weight, actual, selfRating, managerRating]) => ({
+      id: ++kpiId, title, unit, target, direction, tracking, weight, actual,
+      selfRating: selfRating ?? null, selfComment: selfRating ? 'Delivered as planned' : null,
+      managerRating: managerRating ?? null, managerComment: managerRating ? 'Agreed' : null,
+    }));
+  const review = (id: number, employeeId: number, reviewerId: number, cycleId: number, k: Kpi[], summary?: string): Review => {
+    const done = k.every((x) => x.managerRating);
+    return {
+      id, employeeId, reviewerId, cycleId, kpis: k,
+      status: done ? 'COMPLETED' : 'IN_PROGRESS',
+      overallRating: done ? Math.round(k.reduce((s, x) => s + x.managerRating! * x.weight, 0) / 10) / 10 : null,
+      managerSummary: summary ?? null,
+      createdAt: done ? `${YEAR - 1}-01-15T01:00:00.000Z` : `${YEAR}-01-15T01:00:00.000Z`,
+      completedAt: done ? `${YEAR}-01-20T01:00:00.000Z` : null,
+    };
+  };
   const reviews: Review[] = [
-    review(1, 4, 2, `${YEAR} Mid-Year`, 'COMPLETED',
-      kpis([['Deliver sprint commitments', 40, 4, 4], ['Code quality and reviews', 30, 4, 5], ['Mentor junior engineers', 30, 3, 3]]),
-      { overallRating: 4, managerSummary: 'Strong half-year. Keep growing as a mentor.', createdAt: `${YEAR}-06-01T01:00:00.000Z`, completedAt: `${YEAR}-07-10T01:00:00.000Z` }),
-    review(2, 4, 2, `${YEAR} Annual`, 'SELF_REVIEW', kpis([['Deliver sprint commitments', 40], ['Code quality and reviews', 30], ['Mentor junior engineers', 30]])),
-    review(3, 5, 2, `${YEAR} Annual`, 'SELF_REVIEW', kpis([['Test coverage of new features', 50], ['Defect escape rate', 30], ['Automation scripts delivered', 20]])),
-    review(4, 2, 1, `${YEAR} Annual`, 'MANAGER_REVIEW', kpis([['Team delivery on roadmap', 50, 4], ['Team engagement', 30, 4], ['Hiring plan achieved', 20, 3]])),
+    review(1, 4, 2, 1, kpis([
+      ['Story points delivered', 'pts', 200, 'HIGHER', 'CUMULATIVE', 40, 214, 4, 4],
+      ['Production incidents caused', 'incidents', 3, 'LOWER', 'CUMULATIVE', 30, 1, 5, 5],
+      ['Tech talks given', 'talks', 2, 'HIGHER', 'CUMULATIVE', 30, 2, 4, 4],
+    ]), 'Reliable delivery and very few incidents. Ready to take on mentoring.'),
+    review(2, 5, 2, 1, kpis([
+      ['Automated test coverage', '%', 70, 'HIGHER', 'LEVEL', 50, 66, 3, 3],
+      ['Defects escaped to production', 'defects', 8, 'LOWER', 'CUMULATIVE', 30, 7, 4, 4],
+      ['Automation scripts delivered', 'scripts', 100, 'HIGHER', 'CUMULATIVE', 20, 92, 3, 3],
+    ]), 'Solid year. Coverage needs to keep climbing.'),
+    review(3, 2, 1, 1, kpis([
+      ['Roadmap items delivered', 'items', 10, 'HIGHER', 'CUMULATIVE', 50, 12, 5, 5],
+      ['Team engagement score', '%', 75, 'HIGHER', 'LEVEL', 30, 82, 5, 4],
+      ['Team attrition', '%', 10, 'LOWER', 'LEVEL', 20, 5, 5, 5],
+    ]), 'Outstanding year: shipped ahead of plan and kept the team together.'),
+    review(4, 3, 1, 1, kpis([
+      ['Month-end close', 'days', 6, 'LOWER', 'LEVEL', 50, 7, 3, 2],
+      ['Supplier payments on time', '%', 98, 'HIGHER', 'LEVEL', 30, 96, 3, 3],
+      ['Audit findings', 'findings', 3, 'LOWER', 'CUMULATIVE', 20, 2, 4, 4],
+    ]), 'Month-end close slipped; agreed a plan to automate reconciliations.'),
+    review(5, 4, 2, 2, kpis([
+      ['Story points delivered', 'pts', 240, 'HIGHER', 'CUMULATIVE', 40, 205],
+      ['Code review turnaround', 'hours', 24, 'LOWER', 'LEVEL', 30, 22],
+      ['Junior engineers mentored', 'people', 2, 'HIGHER', 'CUMULATIVE', 30, 1],
+    ])),
+    review(6, 5, 2, 2, kpis([
+      ['Automated test coverage', '%', 80, 'HIGHER', 'LEVEL', 50, 71],
+      ['Defects escaped to production', 'defects', 6, 'LOWER', 'CUMULATIVE', 30, 4],
+      ['Automation scripts delivered', 'scripts', 120, 'HIGHER', 'CUMULATIVE', 20, 88],
+    ])),
+    review(7, 2, 1, 2, kpis([
+      ['Roadmap items delivered', 'items', 12, 'HIGHER', 'CUMULATIVE', 50, 9],
+      ['Team engagement score', '%', 80, 'HIGHER', 'LEVEL', 30, 84],
+      ['Hires completed', 'hires', 3, 'HIGHER', 'CUMULATIVE', 20, 3],
+    ])),
+    review(8, 3, 1, 2, kpis([
+      ['Month-end close', 'days', 5, 'LOWER', 'LEVEL', 40, 6],
+      ['Claims processed within SLA', '%', 95, 'HIGHER', 'LEVEL', 35, 97],
+      ['Audit findings', 'findings', 2, 'LOWER', 'CUMULATIVE', 25, null],
+    ])),
   ];
+
+  // Progress history for this year's KPIs; the last value matches kpi.actual
+  const kpiCheckIns: KpiCheckIn[] = [];
+  const history: [reviewId: number, kpiIndex: number, values: number[]][] = [
+    [5, 0, [55, 118, 176, 205]], [5, 1, [30, 26, 22]], [5, 2, [0, 1]],
+    [6, 0, [62, 68, 71]], [6, 1, [1, 3, 4]], [6, 2, [40, 70, 88]],
+    [7, 0, [3, 6, 9]], [7, 1, [78, 84]], [7, 2, [1, 2, 3]],
+    [8, 0, [8, 7, 6]], [8, 1, [92, 97]],
+  ];
+  const months = ['03-31', '06-30', '09-30', '10-31'];
+  for (const [reviewId, index, values] of history) {
+    const r = reviews.find((x) => x.id === reviewId)!;
+    values.forEach((value, i) => kpiCheckIns.push({
+      id: kpiCheckIns.length + 1, reviewId, kpiId: r.kpis[index].id, value, byId: r.employeeId,
+      date: `${YEAR}-${months[i + months.length - values.length]}`,
+      note: i === values.length - 1 ? 'Latest update' : null,
+    }));
+  }
 
   const trainings: Training[] = [
     { id: 1, employeeId: 4, title: 'AWS Certified Cloud Practitioner', provider: 'Amazon Web Services', date: `${YEAR}-06-10`, hours: 16, status: 'COMPLETED', certificateExpiry: `${YEAR + 3}-06-10` },
@@ -214,6 +294,6 @@ export function createMockData() {
 
   return {
     departments, employees, leaveTypes, leaveBalances, leaveRequests, holidays, claimCategories, claims, claimItems,
-    announcements, attendance, overtimeRequests, checklists, reviews, trainings,
+    announcements, attendance, overtimeRequests, checklists, cycles, reviews, kpiCheckIns, rewards: [] as Reward[], trainings,
   };
 }

@@ -1,16 +1,18 @@
-import { App, Button, Card, Descriptions, Form, Input, Rate, Result, Space, Steps, Table, Typography } from 'antd';
-import { useParams } from 'react-router-dom';
+import { AimOutlined, FlagOutlined, StarOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Descriptions, Form, Input, Rate, Result, Row, Space, Steps, Table, Typography } from 'antd';
+import { useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import { api, useApi } from '../api';
 import { useAuth } from '../auth';
-import { StatusTag, fmtDate } from '../format';
-import type { Review } from '../types';
+import { StatusTag, fmtDate, fmtKpi } from '../format';
+import { CheckInModal, KpiProgressTable, PaceSummary, RATING_LABELS } from '../performance';
+import type { Kpi, Review } from '../types';
+import { StatCard } from '../ui';
 
 interface RatingsForm {
   ratings: Record<number, { rating: number; comment?: string }>;
   summary?: string;
 }
-
-const RATING_LABELS = ['Unsatisfactory', 'Needs improvement', 'Meets expectations', 'Exceeds expectations', 'Outstanding'];
 
 export default function ReviewDetail() {
   const { id } = useParams();
@@ -18,6 +20,7 @@ export default function ReviewDetail() {
   const { message } = App.useApp();
   const review = useApi<Review>(`/reviews/${id}`);
   const [form] = Form.useForm<RatingsForm>();
+  const [checkIn, setCheckIn] = useState<Kpi | null>(null);
 
   const r = review.data;
   if (review.error) return <Result status="warning" title={review.error} />;
@@ -28,34 +31,76 @@ export default function ReviewDetail() {
     : null;
   // Employees don't see manager ratings until the review is completed
   const showManager = r.status === 'COMPLETED' || r.reviewerId === user!.id || user!.role === 'HR';
+  const canCheckIn = r.status !== 'COMPLETED' && (r.employee.id === user!.id || r.reviewerId === user!.id || user!.role === 'HR');
 
   const submit = async (v: RatingsForm) => {
     try {
       const ratings = r.kpis.map((k) => ({ kpiId: k.id, rating: v.ratings?.[k.id]?.rating, comment: v.ratings?.[k.id]?.comment }));
-      review.setData(await api<Review>(`/reviews/${r.id}/${mode}`, { body: { ratings, summary: v.summary } }));
+      await api<Review>(`/reviews/${r.id}/${mode}`, { body: { ratings, summary: v.summary } });
+      review.reload();
       message.success(mode === 'self' ? 'Self-review submitted to your manager' : 'Review completed');
     } catch (e) {
       message.error((e as Error).message);
     }
   };
 
-  const step = { SELF_REVIEW: 0, MANAGER_REVIEW: 1, COMPLETED: 2 }[r.status];
+  const step = { IN_PROGRESS: 0, SELF_REVIEW: 1, MANAGER_REVIEW: 2, COMPLETED: 4 }[r.status];
+  // Start the reviewer from the rating the KPI results suggest
+  const initialRatings = mode === 'manager'
+    ? Object.fromEntries(r.kpis.map((k) => [k.id, { rating: k.suggestedRating }]))
+    : undefined;
+
+  const ratingCell = (k: Kpi, who: 'self' | 'manager') => {
+    const rating = who === 'self' ? k.selfRating : k.managerRating;
+    const comment = who === 'self' ? k.selfComment : k.managerComment;
+    if (mode === who) {
+      return (
+        <>
+          <Form.Item name={['ratings', k.id, 'rating']} rules={[{ required: true, message: 'Rate this KPI' }]} style={{ marginBottom: 4 }}>
+            <Rate tooltips={RATING_LABELS} />
+          </Form.Item>
+          <Form.Item name={['ratings', k.id, 'comment']} style={{ marginBottom: 0 }}><Input placeholder="Comment (optional)" /></Form.Item>
+        </>
+      );
+    }
+    return rating ? <><Rate disabled value={rating} style={{ fontSize: 14 }} /><div><Typography.Text type="secondary">{comment}</Typography.Text></div></> : '—';
+  };
 
   return (
     <>
-      <Space style={{ marginBottom: 16 }}>
-        <Typography.Title level={3} style={{ margin: 0 }}>{r.cycle} review · {r.employee.name}</Typography.Title>
+      <Space style={{ marginBottom: 16 }} wrap>
+        <Link to="/reviews">Performance</Link>
+        <Typography.Text type="secondary">/</Typography.Text>
+        <Typography.Title level={3} style={{ margin: 0 }}>{r.cycle.name} · {r.employee.name}</Typography.Title>
         <StatusTag status={r.status} />
       </Space>
 
       <Card style={{ marginBottom: 16 }}>
-        <Steps size="small" current={step === 2 ? 3 : step} items={[{ title: 'Self-review' }, { title: `Manager review (${r.reviewer})` }, { title: 'Completed', description: r.completedAt && fmtDate(r.completedAt) }]} />
+        <Steps
+          size="small"
+          current={step}
+          items={[
+            { title: 'Track KPIs', description: `${fmtDate(r.cycle.startDate)} – ${fmtDate(r.cycle.endDate)}` },
+            { title: 'Self-review' },
+            { title: `Manager review (${r.reviewer})` },
+            { title: 'Completed', description: r.completedAt && fmtDate(r.completedAt) },
+          ]}
+        />
       </Card>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}><StatCard icon={<AimOutlined />} tone="violet" label="Achievement" value={r.achievement} suffix="% of target" hint="Weighted by KPI" /></Col>
+        <Col xs={24} sm={8}>
+          <StatCard icon={<StarOutlined />} tone="amber" label="Suggested rating" value={r.suggestedRating} suffix="/ 5"
+            hint="From achievement: 110%+ = 5, 100% = 4, 85% = 3, 70% = 2" />
+        </Col>
+        <Col xs={24} sm={8}><StatCard icon={<FlagOutlined />} tone="green" label="KPI pace" value={r.pace.onTrack} suffix={`of ${r.kpis.length} on track`} hint={<PaceSummary pace={r.pace} />} /></Col>
+      </Row>
 
       {r.status === 'COMPLETED' && (
         <Card style={{ marginBottom: 16 }}>
           <Descriptions column={1}>
-            <Descriptions.Item label="Overall rating">
+            <Descriptions.Item label="Final rating">
               <Space><Rate disabled allowHalf value={r.overallRating ?? 0} /><b>{r.overallRating}</b> / 5</Space>
             </Descriptions.Item>
             <Descriptions.Item label="Manager summary">{r.managerSummary}</Descriptions.Item>
@@ -63,61 +108,44 @@ export default function ReviewDetail() {
         </Card>
       )}
 
-      <Card title="KPIs">
-        <Form form={form} onFinish={submit} disabled={!mode}>
-          <Table
-            rowKey="id"
-            pagination={false}
-            dataSource={r.kpis}
-            scroll={{ x: true }}
-            columns={[
-              { title: 'KPI', dataIndex: 'title' },
-              { title: 'Weight', render: (_, k) => `${k.weight}%` },
-              {
-                title: 'Self rating',
-                render: (_, k) => mode === 'self' ? (
-                  <>
-                    <Form.Item name={['ratings', k.id, 'rating']} rules={[{ required: true, message: 'Rate this KPI' }]} style={{ marginBottom: 4 }}>
-                      <Rate tooltips={RATING_LABELS} />
-                    </Form.Item>
-                    <Form.Item name={['ratings', k.id, 'comment']} style={{ marginBottom: 0 }}><Input placeholder="Comment (optional)" /></Form.Item>
-                  </>
-                ) : k.selfRating ? (
-                  <><Rate disabled value={k.selfRating} style={{ fontSize: 14 }} /><div><Typography.Text type="secondary">{k.selfComment}</Typography.Text></div></>
-                ) : '—',
-              },
-              ...(showManager ? [{
-                title: 'Manager rating',
-                render: (_: unknown, k: Review['kpis'][number]) => mode === 'manager' ? (
-                  <>
-                    <Form.Item name={['ratings', k.id, 'rating']} rules={[{ required: true, message: 'Rate this KPI' }]} style={{ marginBottom: 4 }}>
-                      <Rate tooltips={RATING_LABELS} />
-                    </Form.Item>
-                    <Form.Item name={['ratings', k.id, 'comment']} style={{ marginBottom: 0 }}><Input placeholder="Comment (optional)" /></Form.Item>
-                  </>
-                ) : k.managerRating ? (
-                  <><Rate disabled value={k.managerRating} style={{ fontSize: 14 }} /><div><Typography.Text type="secondary">{k.managerComment}</Typography.Text></div></>
-                ) : '—',
-              }] : []),
-            ]}
-          />
-          {mode === 'manager' && (
-            <Form.Item name="summary" label="Overall summary" rules={[{ required: true }]} style={{ marginTop: 16 }}>
-              <Input.TextArea rows={3} />
-            </Form.Item>
-          )}
-          {mode && (
-            <Button type="primary" htmlType="submit" style={{ marginTop: 16 }}>
-              {mode === 'self' ? 'Submit self-review' : 'Complete review'}
-            </Button>
-          )}
-        </Form>
-        {!mode && r.status !== 'COMPLETED' && (
-          <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-            Waiting for {r.status === 'SELF_REVIEW' ? `${r.employee.name}'s self-review` : `${r.reviewer}'s review`}.
-          </Typography.Paragraph>
-        )}
+      <Card title="KPI progress" style={{ marginBottom: 16 }} extra={canCheckIn && <Typography.Text type="secondary">Click the history icon to see past updates</Typography.Text>}>
+        <KpiProgressTable review={r} canCheckIn={canCheckIn} onCheckIn={setCheckIn} />
       </Card>
+      <CheckInModal review={r} kpi={checkIn} onClose={() => setCheckIn(null)} onSaved={() => review.reload()} />
+
+      {r.status !== 'IN_PROGRESS' && (
+        <Card title="Ratings">
+          <Form form={form} onFinish={submit} disabled={!mode} initialValues={{ ratings: initialRatings }}>
+            <Table
+              rowKey="id"
+              pagination={false}
+              dataSource={r.kpis}
+              scroll={{ x: true }}
+              columns={[
+                { title: 'KPI', render: (_, k) => <><b>{k.title}</b><div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{fmtKpi(k.actual, k.unit)} of {fmtKpi(k.target, k.unit)} · {k.achievement}% · suggests {k.suggestedRating}</Typography.Text></div></> },
+                { title: 'Weight', render: (_, k) => `${k.weight}%` },
+                { title: 'Self rating', render: (_, k) => ratingCell(k, 'self') },
+                ...(showManager ? [{ title: 'Manager rating', render: (_: unknown, k: Kpi) => ratingCell(k, 'manager') }] : []),
+              ]}
+            />
+            {mode === 'manager' && (
+              <Form.Item name="summary" label="Overall summary" rules={[{ required: true }]} style={{ marginTop: 16 }}>
+                <Input.TextArea rows={3} />
+              </Form.Item>
+            )}
+            {mode && (
+              <Button type="primary" htmlType="submit" style={{ marginTop: 16 }}>
+                {mode === 'self' ? 'Submit self-review' : 'Complete review'}
+              </Button>
+            )}
+          </Form>
+          {!mode && r.status !== 'COMPLETED' && (
+            <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
+              Waiting for {r.status === 'SELF_REVIEW' ? `${r.employee.name}'s self-review` : `${r.reviewer}'s review`}.
+            </Typography.Paragraph>
+          )}
+        </Card>
+      )}
     </>
   );
 }

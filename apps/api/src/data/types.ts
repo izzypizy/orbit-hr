@@ -147,6 +147,7 @@ export interface Payslip {
   allowance: number;
   overtimePay: number;
   overtimeHours: number;
+  bonus: number; // performance bonus paid this period
   unpaidLeaveDays: number;
   unpaidLeaveDeduction: number;
   grossPay: number;
@@ -178,27 +179,84 @@ export interface Checklist {
   tasks: ChecklistTask[];
 }
 
+export interface RewardBand {
+  minRating: number; // final rating from this value up (bands are checked highest first)
+  label: string;
+  bonusMonths: number; // bonus = basic salary × months
+  incrementPct: number; // new basic = basic × (1 + pct/100)
+}
+
+export interface PerformanceCycle {
+  id: number;
+  name: string; // e.g. "2026 Annual"
+  startDate: string;
+  endDate: string;
+  // TRACKING: KPIs set and progress logged; REVIEW: self and manager reviews; CLOSED: final ratings locked
+  status: 'TRACKING' | 'REVIEW' | 'CLOSED';
+  rewardBands: RewardBand[];
+  // Rewards: HR calculates and adjusts (DRAFT), submits, Finance approves (salaries updated, bonus paid in payroll)
+  rewardStatus: 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'APPROVED';
+  payoutPeriod: string | null; // YYYY-MM payroll that pays the bonus
+  effectiveDate: string | null; // increment effective date
+  rewardDecidedBy: number | null;
+  rewardDecidedAt: string | null;
+  rewardComment: string | null;
+}
+
 export interface Kpi {
   id: number;
   title: string;
   weight: number; // percent; all KPIs in a review add up to 100
+  unit: string; // e.g. '%', 'MYR', 'tickets'
+  target: number;
+  direction: 'HIGHER' | 'LOWER'; // HIGHER: more is better (sales); LOWER: less is better (defects)
+  tracking: 'CUMULATIVE' | 'LEVEL'; // CUMULATIVE builds up over the cycle (sales); LEVEL is a rate to hold (uptime)
+  actual: number | null; // latest check-in value
   selfRating: number | null; // 1–5
   selfComment: string | null;
   managerRating: number | null;
   managerComment: string | null;
 }
 
+export interface KpiCheckIn {
+  id: number;
+  reviewId: number;
+  kpiId: number;
+  date: string;
+  value: number;
+  note: string | null;
+  byId: number;
+}
+
 export interface Review {
   id: number;
   employeeId: number;
   reviewerId: number;
-  cycle: string; // e.g. "2026 Annual"
-  status: 'SELF_REVIEW' | 'MANAGER_REVIEW' | 'COMPLETED';
+  cycleId: number;
+  status: 'IN_PROGRESS' | 'SELF_REVIEW' | 'MANAGER_REVIEW' | 'COMPLETED';
   kpis: Kpi[];
   overallRating: number | null;
   managerSummary: string | null;
   createdAt: string;
   completedAt: string | null;
+}
+
+export interface Reward {
+  id: number;
+  cycleId: number;
+  employeeId: number;
+  reviewId: number;
+  rating: number;
+  band: string;
+  basicSalary: number; // monthly basic when calculated
+  prorate: number; // share of the cycle the employee was employed, 0–1 (applies to bonus)
+  bonusMonths: number;
+  bonusAmount: number;
+  incrementPct: number;
+  incrementAmount: number; // monthly
+  newSalary: number;
+  adjusted: boolean; // HR changed it from the band
+  note: string | null;
 }
 
 export interface Training {

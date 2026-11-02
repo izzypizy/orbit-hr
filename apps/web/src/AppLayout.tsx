@@ -1,6 +1,6 @@
 import {
   ApartmentOutlined, AuditOutlined, BellOutlined, BgColorsOutlined, BookOutlined, CalendarOutlined, CheckSquareOutlined, ClockCircleOutlined,
-  DashboardOutlined, DollarOutlined, FileTextOutlined, FlagOutlined, LogoutOutlined, NotificationOutlined, SearchOutlined,
+  DashboardOutlined, DollarOutlined, FileTextOutlined, FlagOutlined, GiftOutlined, LogoutOutlined, NotificationOutlined, SearchOutlined,
   StarOutlined, TeamOutlined, UserOutlined, WalletOutlined,
 } from '@ant-design/icons';
 import { AutoComplete, Badge, Button, Dropdown, Input, Layout, Menu, Space, Tooltip, Typography } from 'antd';
@@ -87,6 +87,7 @@ export default function AppLayout() {
         isApprover && { key: '/approvals', icon: <AuditOutlined />, label: 'Approvals' },
         hasRole('MANAGER', 'HR') && { key: '/employees', icon: <TeamOutlined />, label: hasRole('HR') ? 'Employees' : 'My Team' },
         isApprover && { key: '/onboarding', icon: <CheckSquareOutlined />, label: 'On/Offboarding' },
+        hasRole('HR', 'FINANCE') && { key: '/rewards', icon: <GiftOutlined />, label: 'Rewards' },
         hasRole('HR', 'FINANCE') && { key: '/payroll', icon: <DollarOutlined />, label: 'Payroll' },
       ],
     },

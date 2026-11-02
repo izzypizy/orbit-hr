@@ -18,8 +18,9 @@ import OrgChart from './pages/OrgChart';
 import Payroll from './pages/Payroll';
 import Payslips from './pages/Payslips';
 import Profile from './pages/Profile';
+import Performance from './pages/Performance';
 import ReviewDetail from './pages/ReviewDetail';
-import Reviews from './pages/Reviews';
+import Rewards from './pages/Rewards';
 import TrainingPage from './pages/Training';
 
 export default function App() {
@@ -46,8 +47,9 @@ export default function App() {
         <Route path="claims/:id" element={<ClaimDetail />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="payslips" element={<Payslips />} />
-        <Route path="reviews" element={<Reviews />} />
+        <Route path="reviews" element={<Performance />} />
         <Route path="reviews/:id" element={<ReviewDetail />} />
+        <Route path="rewards" element={<Rewards />} />
         <Route path="training" element={<TrainingPage />} />
         <Route path="onboarding" element={<Onboarding />} />
         <Route path="announcements" element={<Announcements />} />

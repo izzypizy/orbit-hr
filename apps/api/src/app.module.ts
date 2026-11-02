@@ -15,6 +15,8 @@ import { LeaveController } from './leave/leave.controller';
 import { LeaveService } from './leave/leave.service';
 import { PayrollController } from './payroll/payroll.controller';
 import { PayrollService } from './payroll/payroll.service';
+import { CyclesController } from './performance/cycles.controller';
+import { RewardsController } from './performance/rewards.controller';
 import { ChecklistsController } from './talent/checklists.controller';
 import { ReviewsController } from './talent/reviews.controller';
 import { TrainingController } from './talent/training.controller';
@@ -30,6 +32,7 @@ import { TrainingController } from './talent/training.controller';
   controllers: [
     AuthController, EmployeesController, AnnouncementsController, HolidaysController, LeaveController, ClaimsController,
     AttendanceController, PayrollController, ChecklistsController, ReviewsController, TrainingController,
+    CyclesController, RewardsController,
   ],
   providers: [
     MockDb, LeaveService, ClaimsService, AttendanceService, PayrollService,

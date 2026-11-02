@@ -15,6 +15,8 @@ import { LeaveController } from '../../../api/src/leave/leave.controller';
 import { LeaveService } from '../../../api/src/leave/leave.service';
 import { PayrollController } from '../../../api/src/payroll/payroll.controller';
 import { PayrollService } from '../../../api/src/payroll/payroll.service';
+import { CyclesController } from '../../../api/src/performance/cycles.controller';
+import { RewardsController } from '../../../api/src/performance/rewards.controller';
 import { ChecklistsController } from '../../../api/src/talent/checklists.controller';
 import { ReviewsController } from '../../../api/src/talent/reviews.controller';
 import { TrainingController } from '../../../api/src/talent/training.controller';
@@ -37,6 +39,7 @@ const controllers: any[] = [
   new AuthController(db, jwt), new EmployeesController(db), new AnnouncementsController(db), new HolidaysController(db),
   new LeaveController(leave), new ClaimsController(claims), new AttendanceController(attendance), new PayrollController(payroll),
   new ChecklistsController(db), new ReviewsController(db), new TrainingController(db),
+  new CyclesController(db), new RewardsController(db),
 ];
 const guard = new AuthGuard(jwt, new Reflector() as any);
 

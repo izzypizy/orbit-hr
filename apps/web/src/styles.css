@@ -528,6 +528,28 @@ h3.ant-typography,
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
+/* Performance: KPI editor rows wrap on narrow screens */
+.kpi-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px dashed #E4E4E7;
+}
+
+.kpi-row .ant-form-item {
+  margin-bottom: 0;
+}
+
+/* Reward letter */
+.reward-letter {
+  border-radius: 20px;
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(109, 93, 252, 0.08), rgba(244, 114, 182, 0.08));
+  border: 1px solid rgba(109, 93, 252, 0.18);
+}
+
 @media print {
   .app-sider,
   .app-header {
