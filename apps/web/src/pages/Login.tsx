@@ -16,6 +16,10 @@ const DEMO_USERS = [
   { name: 'Priya Nair', role: 'Finance', email: 'finance@demo.local' },
 ];
 
+// The public GitHub Pages demo fills in the password too (same as DEMO_PASSWORD in the API's mock data)
+const IS_DEMO = import.meta.env.MODE === 'demo';
+const DEMO_PASSWORD = 'Password123!';
+
 // Dark theme for the controls inside the glass card (not inheriting the app's light text colours)
 const glassTheme = {
   inherit: false,
@@ -95,7 +99,7 @@ export default function Login() {
 
               <div style={{ marginTop: 28 }}>
                 <Typography.Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
-                  Demo crew · password in README
+                  {IS_DEMO ? 'Demo crew · pick one, then Enter Orbit' : 'Demo crew · password in README'}
                 </Typography.Text>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
                   {DEMO_USERS.map((u) => (
@@ -103,7 +107,7 @@ export default function Login() {
                       key={u.email}
                       type="button"
                       className={`demo-user${email === u.email ? ' active' : ''}`}
-                      onClick={() => form.setFieldsValue({ email: u.email })}
+                      onClick={() => form.setFieldsValue(IS_DEMO ? { email: u.email, password: DEMO_PASSWORD } : { email: u.email })}
                     >
                       <PersonAvatar name={u.name} size={28} />
                       <span style={{ lineHeight: 1.2 }}>
@@ -120,7 +124,9 @@ export default function Login() {
         </section>
 
         <footer className="login-footer">
-          <span>© {new Date().getFullYear()} Orbit HR · Demo environment with mock data</span>
+          <span>
+            © {new Date().getFullYear()} Orbit HR · Demo environment with mock data{IS_DEMO && ' · runs in your browser, resets on refresh'}
+          </span>
           <span>Made for people, not paperwork.</span>
         </footer>
       </div>

@@ -21,6 +21,14 @@ npm run dev
 
 Or press **F5** in VS Code with "Full stack" selected. Data resets every time the API restarts.
 
+### Live demo on GitHub Pages
+
+**https://izzypizy.github.io/orbit-hr/**
+
+Every push to `main` publishes a browser-only build (`npm run build:demo -w @hrms/web`, see
+`.github/workflows/pages.yml`). It runs the same API controllers inside the browser (`apps/web/src/demo/`),
+so there is no server: each visitor gets their own copy of the mock data, which resets when they refresh.
+
 ### In GitHub Codespaces
 
 On GitHub, click **Code → Codespaces → Create codespace on main**. The codespace installs

@@ -6,6 +6,13 @@ export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (token: string | null) =>
   token ? localStorage.setItem(TOKEN_KEY, token) : localStorage.removeItem(TOKEN_KEY);
 
+/** fetch() for API paths; the GitHub Pages demo build answers them in the browser instead. */
+async function request(path: string, init: RequestInit): Promise<Response> {
+  if (import.meta.env.MODE !== 'demo') return fetch(`/api${path}`, init);
+  const { demoFetch } = await import('./demo/server');
+  return demoFetch(path, init);
+}
+
 interface Options {
   method?: string;
   body?: unknown;
@@ -25,10 +32,10 @@ export async function api<T = unknown>(path: string, { method, body, form }: Opt
     payload = JSON.stringify(body);
   }
 
-  const res = await fetch(`/api${path}`, { method: method ?? (payload ? 'POST' : 'GET'), headers, body: payload });
+  const res = await request(path, { method: method ?? (payload ? 'POST' : 'GET'), headers, body: payload });
   if (res.status === 401 && token) {
     setToken(null);
-    window.location.href = '/login';
+    window.location.href = import.meta.env.BASE_URL;
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
@@ -41,7 +48,7 @@ export async function api<T = unknown>(path: string, { method, body, form }: Opt
 
 /** Opens an authenticated file (e.g. a receipt) in a new tab. */
 export async function openFile(path: string) {
-  const res = await fetch(`/api${path}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+  const res = await request(path, { headers: { Authorization: `Bearer ${getToken()}` } });
   if (!res.ok) throw new Error('Could not open file');
   window.open(URL.createObjectURL(await res.blob()), '_blank');
 }
