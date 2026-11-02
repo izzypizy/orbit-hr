@@ -1,0 +1,38 @@
+{
+  // Press F5 with "Full stack" selected to start the API, the web app and a browser together.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API (NestJS)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "debug"],
+      "cwd": "${workspaceFolder}/apps/api",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Web (Vite)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/apps/web"
+    },
+    {
+      "name": "Browser (Edge)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/web/src"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack",
+      "configurations": ["API (NestJS)", "Web (Vite)", "Browser (Edge)"],
+      "stopAll": true
+    }
+  ]
+}

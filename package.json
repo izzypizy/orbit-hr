@@ -1,0 +1,13 @@
+{
+  "name": "hrms",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "setup": "npm install",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @hrms/api\" \"npm run dev -w @hrms/web\"",
+    "build": "npm run build -w @hrms/api && npm run build -w @hrms/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
