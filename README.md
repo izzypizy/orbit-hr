@@ -21,6 +21,12 @@ npm run dev
 
 Or press **F5** in VS Code with "Full stack" selected. Data resets every time the API restarts.
 
+### In GitHub Codespaces
+
+On GitHub, click **Code → Codespaces → Create codespace on main**. The codespace installs
+packages, starts the app and opens Orbit HR in a new tab (port 5173). If the tab doesn't open,
+go to the **Ports** panel and click the globe icon next to port 5173.
+
 ## Demo accounts
 
 All demo accounts use the password `Password123!`.
