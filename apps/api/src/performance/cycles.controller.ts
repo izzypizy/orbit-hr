@@ -27,13 +27,30 @@ export class CyclesController {
   create(@Body() body: unknown) {
     const input = parse(createSchema, body);
     if (this.db.cycles.some((c) => c.name.toLowerCase() === input.name.toLowerCase())) throw new BadRequestException(`"${input.name}" already exists`);
+    return this.view(this.add(input));
+  }
+
+  /** Creates the two half-year cycles for a year: H1 (Jan–Jun, evaluated in June) and H2 (Jul–Dec, evaluated in December). */
+  @Post('half-years')
+  @Roles('HR')
+  halfYears(@Body() body: unknown) {
+    const { year } = parse(z.object({ year: z.number().int().min(2000).max(2100) }), body);
+    const halves = [
+      { name: `${year} H1`, startDate: `${year}-01-01`, endDate: `${year}-06-30` },
+      { name: `${year} H2`, startDate: `${year}-07-01`, endDate: `${year}-12-31` },
+    ].filter((h) => !this.db.cycles.some((c) => c.name === h.name));
+    if (!halves.length) throw new BadRequestException(`${year} H1 and H2 already exist`);
+    return halves.map((h) => this.view(this.add(h)));
+  }
+
+  private add(input: { name: string; startDate: string; endDate: string }) {
     const cycle: PerformanceCycle = {
       id: nextId(this.db.cycles), ...input, status: 'TRACKING',
       rewardBands: DEFAULT_REWARD_BANDS.map((b) => ({ ...b })),
       rewardStatus: 'NOT_STARTED', payoutPeriod: null, effectiveDate: null, rewardDecidedBy: null, rewardDecidedAt: null, rewardComment: null,
     };
     this.db.cycles.push(cycle);
-    return this.view(cycle);
+    return cycle;
   }
 
   /** Ends KPI tracking: every review in the cycle moves to self-review. */
@@ -67,8 +84,8 @@ export class CyclesController {
     const date = localDate();
     const reviews = this.db.reviews.filter((r) => r.cycleId === id && (user.role === 'HR' || r.reviewerId === user.id));
     const rows = reviews.map((r) => {
-      const lastCheckIn = this.db.kpiCheckIns.filter((c) => c.reviewId === r.id).reduce<string | null>((max, c) => (!max || c.date > max ? c.date : max), null);
-      return { reviewId: r.id, status: r.status, overallRating: r.overallRating, employee: this.db.employeeView(r.employeeId), lastCheckIn, ...scoreReview(r, cycle, date) };
+      const lastUpdate = this.db.kpiEntries.filter((e) => e.reviewId === r.id).reduce<string | null>((max, e) => (!max || e.updatedAt > max ? e.updatedAt : max), null);
+      return { reviewId: r.id, status: r.status, overallRating: r.overallRating, employee: this.db.employeeView(r.employeeId), lastUpdate, ...scoreReview(r, this.db.kpiEntries, cycle, date) };
     });
     // People who should have KPIs (anyone with a manager to review them) but don't yet
     const team = this.db.employees.filter((e) =>

@@ -11,6 +11,8 @@ import { PersonAvatar } from '../ui';
 // Demo accounts from the API's mock data (apps/api/src/data/mock-data.ts)
 const DEMO_USERS = [
   { name: 'Siti Aminah', role: 'Employee', email: 'employee@demo.local' },
+  { name: 'Hafiz Ismail', role: 'Sales', email: 'sales@demo.local' },
+  { name: 'Kumar Raj', role: 'Employee', email: 'employee2@demo.local' },
   { name: 'Daniel Lim', role: 'Manager', email: 'manager@demo.local' },
   { name: 'Aisha Rahman', role: 'HR Admin', email: 'hr@demo.local' },
   { name: 'Priya Nair', role: 'Finance', email: 'finance@demo.local' },

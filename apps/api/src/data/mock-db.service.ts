@@ -26,7 +26,7 @@ export class MockDb {
   readonly checklists = this.data.checklists;
   readonly cycles = this.data.cycles;
   readonly reviews = this.data.reviews;
-  readonly kpiCheckIns = this.data.kpiCheckIns;
+  readonly kpiEntries = this.data.kpiEntries;
   readonly rewards = this.data.rewards;
   readonly trainings = this.data.trainings;
   announcements = this.data.announcements;

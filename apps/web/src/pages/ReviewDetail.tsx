@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api, useApi } from '../api';
 import { useAuth } from '../auth';
 import { StatusTag, fmtDate, fmtKpi } from '../format';
-import { CheckInModal, KpiProgressTable, PaceSummary, RATING_LABELS } from '../performance';
+import { EntryModal, KpiProgressTable, PaceSummary, RATING_LABELS, RatingBadge, RatingScale } from '../performance';
 import type { Kpi, Review } from '../types';
 import { StatCard } from '../ui';
 
@@ -20,7 +20,8 @@ export default function ReviewDetail() {
   const { message } = App.useApp();
   const review = useApi<Review>(`/reviews/${id}`);
   const [form] = Form.useForm<RatingsForm>();
-  const [checkIn, setCheckIn] = useState<Kpi | null>(null);
+  const [entry, setEntry] = useState<{ kpi: Kpi; period?: string } | null>(null);
+  const ratings = Form.useWatch('ratings', form) as RatingsForm['ratings'] | undefined;
 
   const r = review.data;
   if (review.error) return <Result status="warning" title={review.error} />;
@@ -31,7 +32,7 @@ export default function ReviewDetail() {
     : null;
   // Employees don't see manager ratings until the review is completed
   const showManager = r.status === 'COMPLETED' || r.reviewerId === user!.id || user!.role === 'HR';
-  const canCheckIn = r.status !== 'COMPLETED' && (r.employee.id === user!.id || r.reviewerId === user!.id || user!.role === 'HR');
+  const canUpdate = r.status !== 'COMPLETED' && (r.employee.id === user!.id || r.reviewerId === user!.id || user!.role === 'HR');
 
   const submit = async (v: RatingsForm) => {
     try {
@@ -45,21 +46,24 @@ export default function ReviewDetail() {
   };
 
   const step = { IN_PROGRESS: 0, SELF_REVIEW: 1, MANAGER_REVIEW: 2, COMPLETED: 4 }[r.status];
-  // Start the reviewer from the rating the KPI results suggest
-  const initialRatings = mode === 'manager'
-    ? Object.fromEntries(r.kpis.map((k) => [k.id, { rating: k.suggestedRating }]))
-    : undefined;
+  // Both forms start from the rating each KPI's scale gives
+  const initialRatings = mode ? Object.fromEntries(r.kpis.map((k) => [k.id, { rating: k.rating ?? 1 }])) : undefined;
 
   const ratingCell = (k: Kpi, who: 'self' | 'manager') => {
     const rating = who === 'self' ? k.selfRating : k.managerRating;
     const comment = who === 'self' ? k.selfComment : k.managerComment;
     if (mode === who) {
+      // A manager who moves away from the scale's rating has to say why
+      const changed = who === 'manager' && ratings?.[k.id]?.rating != null && ratings[k.id].rating !== (k.rating ?? 1);
       return (
         <>
           <Form.Item name={['ratings', k.id, 'rating']} rules={[{ required: true, message: 'Rate this KPI' }]} style={{ marginBottom: 4 }}>
             <Rate tooltips={RATING_LABELS} />
           </Form.Item>
-          <Form.Item name={['ratings', k.id, 'comment']} style={{ marginBottom: 0 }}><Input placeholder="Comment (optional)" /></Form.Item>
+          <Form.Item name={['ratings', k.id, 'comment']} style={{ marginBottom: 0 }}
+            rules={changed ? [{ required: true, message: `The scale gives ${k.rating ?? 1}. Say why you changed it` }] : []}>
+            <Input placeholder={changed ? 'Reason for changing the rating' : 'Comment (optional)'} />
+          </Form.Item>
         </>
       );
     }
@@ -89,12 +93,15 @@ export default function ReviewDetail() {
       </Card>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} sm={8}><StatCard icon={<AimOutlined />} tone="violet" label="Achievement" value={r.achievement} suffix="% of target" hint="Weighted by KPI" /></Col>
         <Col xs={24} sm={8}>
-          <StatCard icon={<StarOutlined />} tone="amber" label="Suggested rating" value={r.suggestedRating} suffix="/ 5"
-            hint="From achievement: 110%+ = 5, 100% = 4, 85% = 3, 70% = 2" />
+          <StatCard icon={<StarOutlined />} tone="amber" label={r.overallRating ? 'Final rating' : 'Rating from KPIs'} value={r.overallRating ?? r.suggestedRating} suffix="/ 5"
+            hint={r.overallRating ? `From KPIs: ${r.suggestedRating}` : 'Each KPI rated on its own scale, weighted'} />
         </Col>
-        <Col xs={24} sm={8}><StatCard icon={<FlagOutlined />} tone="green" label="KPI pace" value={r.pace.onTrack} suffix={`of ${r.kpis.length} on track`} hint={<PaceSummary pace={r.pace} />} /></Col>
+        <Col xs={24} sm={8}><StatCard icon={<AimOutlined />} tone="violet" label="Achievement" value={r.achievement} suffix="% of target" hint="Target = rating 3" /></Col>
+        <Col xs={24} sm={8}>
+          <StatCard icon={<FlagOutlined />} tone="green" label="Updates entered" value={r.updates.done}
+            suffix={r.updates.missing ? `· ${r.updates.missing} missing` : ''} hint={<PaceSummary pace={r.pace} />} />
+        </Col>
       </Row>
 
       {r.status === 'COMPLETED' && (
@@ -108,10 +115,10 @@ export default function ReviewDetail() {
         </Card>
       )}
 
-      <Card title="KPI progress" style={{ marginBottom: 16 }} extra={canCheckIn && <Typography.Text type="secondary">Click the history icon to see past updates</Typography.Text>}>
-        <KpiProgressTable review={r} canCheckIn={canCheckIn} onCheckIn={setCheckIn} />
+      <Card title="KPI progress" style={{ marginBottom: 16 }} extra={<Typography.Text type="secondary">Open a row to see each period and the rating scale</Typography.Text>}>
+        <KpiProgressTable review={r} canUpdate={canUpdate} onUpdate={(kpi, period) => setEntry({ kpi, period })} />
       </Card>
-      <CheckInModal review={r} kpi={checkIn} onClose={() => setCheckIn(null)} onSaved={() => review.reload()} />
+      {entry && <EntryModal review={r} kpi={entry.kpi} period={entry.period} onClose={() => setEntry(null)} onSaved={() => review.reload()} />}
 
       {r.status !== 'IN_PROGRESS' && (
         <Card title="Ratings">
@@ -122,8 +129,17 @@ export default function ReviewDetail() {
               dataSource={r.kpis}
               scroll={{ x: true }}
               columns={[
-                { title: 'KPI', render: (_, k) => <><b>{k.title}</b><div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{fmtKpi(k.actual, k.unit)} of {fmtKpi(k.target, k.unit)} · {k.achievement}% · suggests {k.suggestedRating}</Typography.Text></div></> },
-                { title: 'Weight', render: (_, k) => `${k.weight}%` },
+                {
+                  title: 'KPI',
+                  render: (_, k) => (
+                    <>
+                      <b>{k.title}</b>
+                      <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>Result {fmtKpi(k.value, k.unit)} · weight {k.weight}%</Typography.Text></div>
+                      <div style={{ marginTop: 4 }}><RatingScale kpi={k} highlight={k.rating} /></div>
+                    </>
+                  ),
+                },
+                { title: 'Scale gives', render: (_, k) => <RatingBadge rating={k.rating ?? 1} /> },
                 { title: 'Self rating', render: (_, k) => ratingCell(k, 'self') },
                 ...(showManager ? [{ title: 'Manager rating', render: (_: unknown, k: Kpi) => ratingCell(k, 'manager') }] : []),
               ]}

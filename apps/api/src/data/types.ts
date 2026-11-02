@@ -203,29 +203,35 @@ export interface PerformanceCycle {
   rewardComment: string | null;
 }
 
+export type KpiFrequency = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY';
+
 export interface Kpi {
   id: number;
   title: string;
   weight: number; // percent; all KPIs in a review add up to 100
-  unit: string; // e.g. '%', 'MYR', 'tickets'
-  target: number;
+  unit: string; // e.g. 'MYR', '%', 'tickets'
+  frequency: KpiFrequency; // how often a figure is entered
+  aggregation: 'AVERAGE' | 'TOTAL' | 'LATEST'; // how the period figures combine into the KPI result
   direction: 'HIGHER' | 'LOWER'; // HIGHER: more is better (sales); LOWER: less is better (defects)
-  tracking: 'CUMULATIVE' | 'LEVEL'; // CUMULATIVE builds up over the cycle (sales); LEVEL is a rate to hold (uptime)
-  actual: number | null; // latest check-in value
+  // Where ratings 2, 3, 4 and 5 start. HIGHER: result >= value; LOWER: result <= value. Anything else is 1.
+  // Rating 3 ("meets expectations") is the target.
+  scale: [number, number, number, number];
   selfRating: number | null; // 1–5
   selfComment: string | null;
   managerRating: number | null;
   managerComment: string | null;
 }
 
-export interface KpiCheckIn {
+/** The figure for one KPI in one period (e.g. June sales). One per period; re-entering corrects it. */
+export interface KpiEntry {
   id: number;
   reviewId: number;
   kpiId: number;
-  date: string;
+  period: string; // YYYY-MM of the period's first month
   value: number;
   note: string | null;
   byId: number;
+  updatedAt: string;
 }
 
 export interface Review {

@@ -4,16 +4,20 @@ import { AuthUser, CurrentUser, Roles } from '../common/auth';
 import { localDate, nextId, now, parse } from '../common/util';
 import { MockDb } from '../data/mock-db.service';
 import { Review } from '../data/types';
-import { scoreReview, weightedRating } from '../performance/kpi-scoring';
+import { periodsFor, scoreKpi, scoreReview, weightedRating } from '../performance/kpi-scoring';
 
 const kpiSchema = z.object({
   title: z.string().trim().min(3),
   weight: z.number().int().min(5).max(100),
   unit: z.string().trim().min(1).max(20),
-  target: z.number().min(0),
+  frequency: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY']),
+  aggregation: z.enum(['AVERAGE', 'TOTAL', 'LATEST']),
   direction: z.enum(['HIGHER', 'LOWER']),
-  tracking: z.enum(['CUMULATIVE', 'LEVEL']),
-}).refine((k) => k.direction === 'LOWER' || k.target > 0, { message: 'Target must be more than 0', path: ['target'] });
+  scale: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+}).refine(
+  (k) => k.scale.every((t, i) => i === 0 || (k.direction === 'HIGHER' ? t > k.scale[i - 1] : t < k.scale[i - 1])),
+  (k) => ({ message: `"${k.title}": each rating must start ${k.direction === 'HIGHER' ? 'higher' : 'lower'} than the one before`, path: ['scale'] }),
+);
 
 const createSchema = z.object({
   employeeId: z.number().int(),
@@ -21,9 +25,10 @@ const createSchema = z.object({
   kpis: z.array(kpiSchema).min(1).max(10),
 });
 
-const checkInSchema = z.object({
+const entrySchema = z.object({
   kpiId: z.number().int(),
-  value: z.number().min(0),
+  period: z.string().regex(/^\d{4}-\d{2}$/),
+  value: z.number(),
   note: z.string().trim().max(500).optional(),
 });
 
@@ -49,7 +54,7 @@ export class ReviewsController {
   get(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
     const r = this.find(id);
     if (!this.canView(user, r)) throw new ForbiddenException();
-    return { ...this.view(r), checkIns: this.checkIns(r) };
+    return this.view(r);
   }
 
   /** HR, or the employee's manager, sets KPIs for a cycle. The employee's manager is the reviewer. */
@@ -72,9 +77,7 @@ export class ReviewsController {
       reviewerId: employee.managerId ?? user.id,
       cycleId: cycle.id,
       status: cycle.status === 'TRACKING' ? 'IN_PROGRESS' : 'SELF_REVIEW',
-      kpis: input.kpis.map((k) => ({
-        id: ++kpiId, ...k, actual: null, selfRating: null, selfComment: null, managerRating: null, managerComment: null,
-      })),
+      kpis: input.kpis.map((k) => ({ id: ++kpiId, ...k, selfRating: null, selfComment: null, managerRating: null, managerComment: null })),
       overallRating: null,
       managerSummary: null,
       createdAt: now(),
@@ -84,20 +87,27 @@ export class ReviewsController {
     return this.view(review);
   }
 
-  /** Log the latest value of a KPI. The employee, their reviewer or HR can update progress until the review is completed. */
-  @Post(':id/check-ins')
-  checkIn(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
+  /**
+   * Enter (or correct) a KPI's figure for one period, e.g. June sales. The employee, their reviewer or HR can do this
+   * for any period that has started, until the review is completed.
+   */
+  @Post(':id/entries')
+  enter(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const r = this.find(id);
     if (r.employeeId !== user.id && r.reviewerId !== user.id && user.role !== 'HR') throw new ForbiddenException();
     if (r.status === 'COMPLETED') throw new BadRequestException('This review is completed');
-    const input = parse(checkInSchema, body);
+    const input = parse(entrySchema, body);
     const kpi = r.kpis.find((k) => k.id === input.kpiId);
     if (!kpi) throw new NotFoundException('KPI not found');
-    kpi.actual = input.value;
-    this.db.kpiCheckIns.push({
-      id: nextId(this.db.kpiCheckIns), reviewId: r.id, kpiId: kpi.id, date: localDate(), value: input.value, note: input.note || null, byId: user.id,
-    });
-    return { ...this.view(r), checkIns: this.checkIns(r) };
+    const period = periodsFor(this.db.cycle(r.cycleId), kpi.frequency).find((p) => p.key === input.period);
+    if (!period) throw new BadRequestException(`${input.period} is not a ${kpi.frequency.toLowerCase().replace('_', '-')} period of this cycle`);
+    if (period.start > localDate()) throw new BadRequestException(`${period.label} has not started yet`);
+
+    const existing = this.db.kpiEntries.find((e) => e.kpiId === kpi.id && e.period === period.key);
+    const fields = { value: input.value, note: input.note || null, byId: user.id, updatedAt: now() };
+    if (existing) Object.assign(existing, fields);
+    else this.db.kpiEntries.push({ id: nextId(this.db.kpiEntries), reviewId: r.id, kpiId: kpi.id, period: period.key, ...fields });
+    return this.view(r);
   }
 
   @Post(':id/self')
@@ -111,11 +121,21 @@ export class ReviewsController {
     return this.view(r);
   }
 
+  /** The reviewer confirms each KPI's rating. Changing the rating the scale gives needs a reason. */
   @Post(':id/manager')
   managerReview(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const r = this.find(id);
     if (r.reviewerId !== user.id) throw new ForbiddenException('Only the assigned reviewer can complete this review');
     if (r.status !== 'MANAGER_REVIEW') throw new BadRequestException('Waiting for the employee self-review');
+    const input = parse(ratingsSchema, body);
+    const cycle = this.db.cycle(r.cycleId);
+    for (const kpi of r.kpis) {
+      const given = input.ratings.find((x) => x.kpiId === kpi.id);
+      const fromScale = scoreKpi(kpi, this.db.kpiEntries, cycle, localDate()).rating ?? 1;
+      if (given && given.rating !== fromScale && !given.comment) {
+        throw new BadRequestException(`"${kpi.title}": the scale gives ${fromScale}. Add a comment explaining the change to ${given.rating}`);
+      }
+    }
     const { summary } = this.applyRatings(r, body, 'manager');
     if (!summary) throw new BadRequestException('Please write an overall summary');
     r.managerSummary = summary;
@@ -151,18 +171,14 @@ export class ReviewsController {
     return r;
   }
 
-  private checkIns(r: Review) {
-    return this.db.kpiCheckIns
-      .filter((c) => c.reviewId === r.id)
-      .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
-      .map((c) => ({ ...c, by: this.db.employee(c.byId).name }));
-  }
-
   private view(r: Review) {
     const cycle = this.db.cycle(r.cycleId);
+    const scored = scoreReview(r, this.db.kpiEntries, cycle, localDate());
+    const name = (id: number | null) => (id ? this.db.employee(id).name : null);
     return {
       ...r,
-      ...scoreReview(r, cycle, localDate()),
+      ...scored,
+      kpis: scored.kpis.map((k) => ({ ...k, periods: k.periods.map((p) => ({ ...p, by: name(p.byId) })) })),
       cycle: { id: cycle.id, name: cycle.name, status: cycle.status, startDate: cycle.startDate, endDate: cycle.endDate },
       employee: this.db.employeeView(r.employeeId),
       reviewer: this.db.employee(r.reviewerId).name,

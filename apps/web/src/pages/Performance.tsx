@@ -2,16 +2,16 @@ import {
   AimOutlined, CheckCircleOutlined, FlagOutlined, GiftOutlined, PlusOutlined, StarOutlined, TeamOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import {
-  Alert, App, Button, Card, Col, DatePicker, Empty, Form, Input, Modal, Progress, Rate, Row, Select, Space, Table, Tabs, Typography,
+  Alert, App, Button, Card, Col, DatePicker, Empty, Form, Input, Modal, Progress, Radio, Rate, Row, Select, Space, Table, Tabs, Typography,
 } from 'antd';
-import type { Dayjs } from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, useApi } from '../api';
 import { useAuth } from '../auth';
 import { StatusTag, fmtDate, fmtMoney, fmtPeriod } from '../format';
 import {
-  AchievementBar, CheckInModal, KpiFields, KpiProgressTable, PaceSummary, blankKpi, type KpiDraft,
+  AchievementBar, EntryModal, KpiFields, KpiProgressTable, PaceSummary, RatingBadge, salesKpiExample, type KpiDraft,
 } from '../performance';
 import type { Cycle, Employee, Kpi, MonitorRow, Review, Reward } from '../types';
 import { PersonAvatar, StatCard } from '../ui';
@@ -36,7 +36,7 @@ export default function Performance() {
   const monitor = useApi<Monitor>(canManage && cycle ? `/cycles/${cycle.id}/monitor` : null);
   const rewards = useApi<Reward[]>('/rewards/mine');
 
-  const [checkIn, setCheckIn] = useState<Kpi | null>(null);
+  const [entry, setEntry] = useState<{ kpi: Kpi; period?: string } | null>(null);
   const [kpisFor, setKpisFor] = useState<number | null>(); // undefined = closed, null = pick employee
   const [newCycle, setNewCycle] = useState(false);
 
@@ -79,20 +79,24 @@ export default function Performance() {
             <Alert type="info" showIcon style={{ marginBottom: 16 }} message="Your self-review is open"
               action={<Button type="primary" size="small" onClick={() => navigate(`/reviews/${mine.id}`)}>Start self-review</Button>} />
           )}
+          {mine.updates.missing > 0 && mine.status !== 'COMPLETED' && (
+            <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={`${mine.updates.missing} update${mine.updates.missing > 1 ? 's' : ''} missing`}
+              description="Some past months or quarters have no figure yet. Open a KPI's row to see which." />
+          )}
           <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-            <Col xs={24} sm={8}><StatCard icon={<AimOutlined />} tone="violet" label="Overall achievement" value={mine.achievement} suffix="% of target" hint="Weighted by KPI" /></Col>
             <Col xs={24} sm={8}>
-              <StatCard icon={<StarOutlined />} tone="amber" label={mine.overallRating ? 'Final rating' : 'Rating if the cycle ended today'}
-                value={mine.overallRating ?? mine.suggestedRating} suffix="/ 5" hint={mine.overallRating ? `Reviewed by ${mine.reviewer}` : 'Suggested from achievement'} />
+              <StatCard icon={<StarOutlined />} tone="amber" label={mine.overallRating ? 'Final rating' : 'Rating from your KPIs'}
+                value={mine.overallRating ?? mine.suggestedRating} suffix="/ 5" hint={mine.overallRating ? `Reviewed by ${mine.reviewer}` : 'Weighted by KPI, at the current pace'} />
             </Col>
+            <Col xs={24} sm={8}><StatCard icon={<AimOutlined />} tone="violet" label="Overall achievement" value={mine.achievement} suffix="% of target" hint="Target = rating 3" /></Col>
             <Col xs={24} sm={8}>
-              <StatCard icon={<FlagOutlined />} tone="green" label="KPIs on track" value={mine.pace.onTrack} suffix={`of ${mine.kpis.length}`} hint={<PaceSummary pace={mine.pace} />} />
+              <StatCard icon={<FlagOutlined />} tone="green" label="Updates entered" value={mine.updates.done} suffix={mine.updates.missing ? `· ${mine.updates.missing} missing` : ''} hint={<PaceSummary pace={mine.pace} />} />
             </Col>
           </Row>
-          <Card title="My KPIs" extra={<Link to={`/reviews/${mine.id}`}>Open review and history</Link>}>
-            <KpiProgressTable review={mine} canCheckIn={mine.status !== 'COMPLETED'} onCheckIn={setCheckIn} />
+          <Card title="My KPIs" extra={<Link to={`/reviews/${mine.id}`}>Open review</Link>}>
+            <KpiProgressTable review={mine} canUpdate={mine.status !== 'COMPLETED'} onUpdate={(kpi, period) => setEntry({ kpi, period })} />
           </Card>
-          <CheckInModal review={mine} kpi={checkIn} onClose={() => setCheckIn(null)} onSaved={reload} />
+          {entry && <EntryModal review={mine} kpi={entry.kpi} period={entry.period} onClose={() => setEntry(null)} onSaved={reload} />}
         </>
       ) : (
         <Card><Empty description={`No KPIs for ${cycle?.name ?? 'this cycle'} yet. Your manager sets them with you.`} /></Card>
@@ -203,9 +207,9 @@ function TeamMonitor({ data, loading, onSetKpis }: { data?: Monitor; loading: bo
     <>
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}><StatCard icon={<TeamOutlined />} tone="violet" label="People with KPIs" value={rows.length} hint={data?.withoutKpis.length ? `${data.withoutKpis.length} still need KPIs` : 'Everyone is set up'} /></Col>
-        <Col xs={12} md={6}><StatCard icon={<AimOutlined />} tone="blue" label="Average achievement" value={avg} suffix="%" /></Col>
-        <Col xs={12} md={6}><StatCard icon={<CheckCircleOutlined />} tone="green" label="KPIs on track" value={kpis.filter((k) => k.pace === 'ON_TRACK').length} suffix={`of ${kpis.length}`} /></Col>
-        <Col xs={12} md={6}><StatCard icon={<WarningOutlined />} tone="amber" label="At risk or off track" value={kpis.filter((k) => k.pace === 'AT_RISK' || k.pace === 'OFF_TRACK').length} hint="Worth a check-in" /></Col>
+        <Col xs={12} md={6}><StatCard icon={<CheckCircleOutlined />} tone="green" label="KPIs on track" value={kpis.filter((k) => k.pace === 'ON_TRACK').length} suffix={`of ${kpis.length}`} hint={`Average achievement ${avg}%`} /></Col>
+        <Col xs={12} md={6}><StatCard icon={<AimOutlined />} tone="blue" label="At risk or off track" value={kpis.filter((k) => k.pace === 'AT_RISK' || k.pace === 'OFF_TRACK').length} hint="Worth a conversation" /></Col>
+        <Col xs={12} md={6}><StatCard icon={<WarningOutlined />} tone="amber" label="Missing updates" value={rows.reduce((s, r) => s + r.updates.missing, 0)} hint="Past periods with no figure" /></Col>
       </Row>
 
       {!!data?.withoutKpis.length && data.cycle.status !== 'CLOSED' && (
@@ -232,7 +236,7 @@ function TeamMonitor({ data, loading, onSetKpis }: { data?: Monitor; loading: bo
           style={{ whiteSpace: 'nowrap' }}
           expandable={{
             expandedRowRender: (r) => (
-              <KpiProgressTable review={{ ...r, id: r.reviewId } as unknown as Review} canCheckIn={false} onCheckIn={() => {}} />
+              <KpiProgressTable review={{ ...r, id: r.reviewId } as unknown as Review} canUpdate={false} onUpdate={() => {}} />
             ),
           }}
           columns={[
@@ -248,16 +252,23 @@ function TeamMonitor({ data, loading, onSetKpis }: { data?: Monitor; loading: bo
                 </Space>
               ),
             },
+            {
+              title: tracking ? 'Rating from KPIs' : 'Rating',
+              sorter: (a, b) => (a.overallRating ?? a.suggestedRating) - (b.overallRating ?? b.suggestedRating),
+              render: (_, r) => r.overallRating
+                ? <b>{r.overallRating} final</b>
+                : <><b>{r.suggestedRating}</b> <Typography.Text type="secondary">/ 5</Typography.Text></>,
+            },
             { title: 'Achievement', sorter: (a, b) => a.achievement - b.achievement, render: (_, r) => <AchievementBar value={r.achievement} width={160} /> },
             { title: 'KPI pace', render: (_, r) => <PaceSummary pace={r.pace} /> },
             {
-              title: tracking ? 'Rating so far' : 'Rating',
-              render: (_, r) => r.overallRating
-                ? <b>{r.overallRating}</b>
-                : <Typography.Text type="secondary">{r.suggestedRating} suggested</Typography.Text>,
+              title: 'Updates',
+              render: (_, r) => r.updates.missing
+                ? <Typography.Text type="danger">{r.updates.missing} missing</Typography.Text>
+                : <Typography.Text type="success">Up to date</Typography.Text>,
             },
             { title: 'Status', render: (_, r) => <StatusTag status={r.status} /> },
-            { title: 'Last update', render: (_, r) => fmtDate(r.lastCheckIn) },
+            { title: 'Last update', render: (_, r) => fmtDate(r.lastUpdate) },
           ]}
         />
       </Card>
@@ -296,19 +307,16 @@ function SetKpisModal({ cycle, employeeId, onClose, onCreated }: {
         requiredMark={false}
         initialValues={{
           employeeId: employeeId ?? undefined,
-          kpis: [
-            { ...blankKpi(40), unit: 'MYR', target: 50000, direction: 'HIGHER', tracking: 'CUMULATIVE' },
-            { ...blankKpi(30), unit: '%', target: 95 },
-            { ...blankKpi(30), unit: 'defects', target: 5, direction: 'LOWER', tracking: 'CUMULATIVE' },
-          ],
+          // Starts with the sales example; change or replace it
+          kpis: [salesKpiExample(100)],
         }}
       >
         <Form.Item name="employeeId" label="Employee" rules={[{ required: true }]} style={{ maxWidth: 320 }}>
           <Select showSearch optionFilterProp="label" options={team.data?.filter((e) => e.id !== user!.id).map((e) => ({ value: e.id, label: e.name }))} />
         </Form.Item>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 4 }}>
-          Make each KPI measurable: a target, a unit, whether more or less is better, and whether it adds up over the cycle
-          (like sales) or is a level to keep (like uptime). Weights must add up to 100%.
+        <Typography.Paragraph type="secondary">
+          For each KPI, choose how often the employee enters a figure and whether the result is the average, the total or the
+          latest figure. Then set where each rating starts. Weights must add up to 100%.
         </Typography.Paragraph>
         <KpiFields />
         <Typography.Text type={total === 100 ? 'success' : 'danger'} style={{ display: 'block', marginTop: 12 }}>
@@ -319,14 +327,28 @@ function SetKpisModal({ cycle, employeeId, onClose, onCreated }: {
   );
 }
 
+interface NewCycleForm {
+  kind: 'HALF_YEARS' | 'CUSTOM';
+  year?: Dayjs;
+  name?: string;
+  dates?: [Dayjs, Dayjs];
+}
+
 function NewCycleModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (c: Cycle) => void }) {
   const { message } = App.useApp();
-  const [form] = Form.useForm<{ name: string; dates: [Dayjs, Dayjs] }>();
-  const create = async (v: { name: string; dates: [Dayjs, Dayjs] }) => {
+  const [form] = Form.useForm<NewCycleForm>();
+  const kind = Form.useWatch('kind', form);
+  const create = async (v: NewCycleForm) => {
     try {
-      const c = await api<Cycle>('/cycles', { body: { name: v.name, startDate: v.dates[0].format('YYYY-MM-DD'), endDate: v.dates[1].format('YYYY-MM-DD') } });
-      message.success(`${c.name} created`);
-      onCreated(c);
+      if (v.kind === 'HALF_YEARS') {
+        const created = await api<Cycle[]>('/cycles/half-years', { body: { year: v.year!.year() } });
+        message.success(`${created.map((c) => c.name).join(' and ')} created`);
+        onCreated(created[0]);
+      } else {
+        const c = await api<Cycle>('/cycles', { body: { name: v.name, startDate: v.dates![0].format('YYYY-MM-DD'), endDate: v.dates![1].format('YYYY-MM-DD') } });
+        message.success(`${c.name} created`);
+        onCreated(c);
+      }
       onClose();
     } catch (e) {
       message.error((e as Error).message);
@@ -334,9 +356,21 @@ function NewCycleModal({ open, onClose, onCreated }: { open: boolean; onClose: (
   };
   return (
     <Modal title="New performance cycle" open={open} onCancel={onClose} onOk={form.submit} okText="Create" destroyOnHidden>
-      <Form form={form} layout="vertical" onFinish={create} requiredMark={false} preserve={false}>
-        <Form.Item name="name" label="Name" rules={[{ required: true, min: 3 }]}><Input placeholder="e.g. 2027 Annual" /></Form.Item>
-        <Form.Item name="dates" label="Period" rules={[{ required: true }]}><DatePicker.RangePicker style={{ width: '100%' }} /></Form.Item>
+      <Form form={form} layout="vertical" onFinish={create} requiredMark={false} preserve={false} initialValues={{ kind: 'HALF_YEARS', year: dayjs().add(1, 'year') }}>
+        <Form.Item name="kind">
+          <Radio.Group optionType="button" options={[{ value: 'HALF_YEARS', label: 'Half-yearly (H1 + H2)' }, { value: 'CUSTOM', label: 'Custom period' }]} />
+        </Form.Item>
+        {kind === 'CUSTOM' ? (
+          <>
+            <Form.Item name="name" label="Name" rules={[{ required: true, min: 3 }]}><Input placeholder="e.g. 2027 Annual" /></Form.Item>
+            <Form.Item name="dates" label="Period" rules={[{ required: true }]}><DatePicker.RangePicker style={{ width: '100%' }} /></Form.Item>
+          </>
+        ) : (
+          <>
+            <Form.Item name="year" label="Year" rules={[{ required: true }]}><DatePicker picker="year" style={{ width: '100%' }} /></Form.Item>
+            <Typography.Text type="secondary">Creates H1 (January–June, evaluated in June) and H2 (July–December, evaluated in December).</Typography.Text>
+          </>
+        )}
       </Form>
     </Modal>
   );

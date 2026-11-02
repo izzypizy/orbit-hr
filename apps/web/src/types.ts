@@ -122,18 +122,40 @@ export interface Checklist {
 
 export type PaceStatus = 'ON_TRACK' | 'AT_RISK' | 'OFF_TRACK' | 'NO_DATA';
 
+export type KpiFrequency = 'MONTHLY' | 'QUARTERLY' | 'HALF_YEARLY';
+export type KpiAggregation = 'AVERAGE' | 'TOTAL' | 'LATEST';
+
+export interface KpiPeriod {
+  key: string; // YYYY-MM of the first month
+  label: string;
+  start: string;
+  end: string;
+  status: 'DONE' | 'MISSING' | 'OPEN' | 'UPCOMING';
+  value: number | null;
+  note: string | null;
+  by: string | null;
+  updatedAt: string | null;
+}
+
 export interface Kpi {
   id: number;
   title: string;
   weight: number;
   unit: string;
-  target: number;
+  frequency: KpiFrequency;
+  aggregation: KpiAggregation;
   direction: 'HIGHER' | 'LOWER';
-  tracking: 'CUMULATIVE' | 'LEVEL';
-  actual: number | null;
+  scale: [number, number, number, number]; // where ratings 2, 3, 4, 5 start
+  value: number | null; // result so far
+  target: number; // = start of rating 3
+  projected: number | null; // end-of-cycle projection (totals)
+  rating: number | null; // from the result so far
+  projectedRating: number | null;
   achievement: number; // % of target
-  suggestedRating: number;
   pace: PaceStatus;
+  periods: KpiPeriod[];
+  done: number;
+  missing: number;
   selfRating: number | null;
   selfComment: string | null;
   managerRating: number | null;
@@ -171,15 +193,6 @@ export interface Cycle {
   rewardComment: string | null;
 }
 
-export interface KpiCheckIn {
-  id: number;
-  kpiId: number;
-  date: string;
-  value: number;
-  note: string | null;
-  by: string;
-}
-
 export interface Review {
   id: number;
   cycle: Pick<Cycle, 'id' | 'name' | 'status' | 'startDate' | 'endDate'>;
@@ -188,6 +201,7 @@ export interface Review {
   achievement: number;
   suggestedRating: number;
   pace: PaceCounts;
+  updates: { done: number; missing: number };
   overallRating: number | null;
   managerSummary: string | null;
   reviewerId: number;
@@ -195,7 +209,6 @@ export interface Review {
   employee: Employee;
   createdAt: string;
   completedAt: string | null;
-  checkIns?: KpiCheckIn[];
 }
 
 export interface MonitorRow {
@@ -203,11 +216,12 @@ export interface MonitorRow {
   status: Review['status'];
   overallRating: number | null;
   employee: Employee;
-  lastCheckIn: string | null;
+  lastUpdate: string | null;
   kpis: Kpi[];
   achievement: number;
   suggestedRating: number;
   pace: PaceCounts;
+  updates: { done: number; missing: number };
 }
 
 export interface Reward {

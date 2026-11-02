@@ -44,6 +44,7 @@ All demo accounts use the password `Password123!`.
 | employee@demo.local | Employee (Siti) | Leave, claims, clock in/out, overtime, payslips, self-review, training |
 | employee2@demo.local | Employee (Kumar) | Same, second team member |
 | newhire@demo.local | Employee (Farah) | New hire, part-way through onboarding |
+| sales@demo.local | Employee (Hafiz) | Sales executive: monthly sales KPI rated on its own scale |
 | manager@demo.local | Manager (Daniel) | + approve team leave, claims (step 1) and overtime; team attendance; set team KPIs, monitor progress, review the team |
 | hr@demo.local | HR Admin (Aisha) | + add employees, on/offboarding, announcements, holidays, performance cycles, calculate rewards, payroll |
 | finance@demo.local | Finance (Priya) | + approve claims (step 2), mark claims paid, approve rewards, payroll |
@@ -79,11 +80,14 @@ All demo accounts use the password `Password123!`.
 - Training records with certificate expiry warnings
 
 **Performance & KPIs**
-- Performance cycles run by HR: Tracking KPIs → Review phase → Closed
-- Measurable KPIs: target, unit, "at least" or "at most", and whether it adds up over the cycle (sales) or is a level to keep (uptime); weights add up to 100%
-- Progress check-ins with history; each KPI shows achievement (% of target, capped at 150%) and pace (on track, at risk, off track) against where it should be by now
-- Team monitor for managers and HR: achievement, KPIs at risk, people without KPIs
-- Suggested rating from achievement (110%+ = 5, 100% = 4, 85% = 3, 70% = 2), then self-review and manager review give the final rating
+- Evaluated twice a year: HR creates H1 (Jan–Jun, evaluated in June) and H2 (Jul–Dec, evaluated in December) in one step; custom periods also work
+- Each cycle: Tracking KPIs → Review phase → Closed
+- Each KPI has an update frequency (monthly, quarterly or half-yearly) and a result that is the average, total or latest of the figures entered
+- Employees enter the figure for each period (e.g. "June sales: MYR 52,300"); past figures can be corrected; missing updates are flagged
+- Each KPI has its own rating scale, e.g. average monthly sales: 1 below MYR 20,000 · 2 MYR 20,000–49,999 · 3 MYR 50,000–55,000 · 4 MYR 55,001–60,000 · 5 above MYR 60,000
+- The system works out each KPI's rating and the weighted overall rating; totals are projected to the end of the half to show whether someone is on track
+- Self-review, then manager review; a manager who changes the rating the scale gives must give a reason
+- Team monitor for managers and HR: ratings, KPIs at risk, missing updates, people without KPIs
 
 **Rewards (bonus and increment)**
 - Reward bands per cycle map the final rating to bonus months and increment %

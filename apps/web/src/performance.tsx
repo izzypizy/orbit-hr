@@ -1,14 +1,49 @@
-// Shared pieces for the performance pages: KPI progress, check-ins and the KPI editor.
-import { HistoryOutlined, MinusCircleOutlined, PlusOutlined, RiseOutlined } from '@ant-design/icons';
-import { App, Button, Form, Input, InputNumber, Modal, Progress, Select, Space, Table, Timeline, Tooltip, Typography } from 'antd';
+// Shared pieces for the performance pages: KPI results, period entries, rating scales and the KPI editor.
+import { EditOutlined, MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { App, Button, Card, Col, Form, Input, InputNumber, Modal, Progress, Row, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import { api } from './api';
 import { StatusTag, fmtDate, fmtKpi } from './format';
-import type { Kpi, KpiCheckIn, PaceCounts, PaceStatus, Review } from './types';
+import type { Kpi, KpiAggregation, KpiFrequency, KpiPeriod, PaceCounts, PaceStatus, Review } from './types';
 
 const PACE_COLOR: Record<PaceStatus, string> = { ON_TRACK: '#16A34A', AT_RISK: '#F59E0B', OFF_TRACK: '#DC2626', NO_DATA: '#D4D4D8' };
 
-export const RATING_LABELS = ['Unsatisfactory', 'Needs improvement', 'Meets expectations', 'Exceeds expectations', 'Outstanding'];
+export const RATING_LABELS = ['Does not meet expectations', 'Partially meets expectations', 'Meets expectations', 'Exceeds expectations', 'Far exceeds expectations'];
+
+export const FREQUENCY_LABEL: Record<KpiFrequency, string> = { MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', HALF_YEARLY: 'Half-yearly' };
+const FIGURE: Record<KpiFrequency, string> = { MONTHLY: 'monthly', QUARTERLY: 'quarterly', HALF_YEARLY: 'half-year' };
+export const AGGREGATION_LABEL: Record<KpiAggregation, string> = { AVERAGE: 'Average', TOTAL: 'Total', LATEST: 'Latest value' };
+
+/** "Average of monthly figures", "Total of quarterly figures", "Latest monthly figure". */
+export const describeKpi = (k: Pick<Kpi, 'aggregation' | 'frequency'>) =>
+  k.aggregation === 'LATEST' ? `Latest ${FIGURE[k.frequency]} figure` : `${AGGREGATION_LABEL[k.aggregation]} of ${FIGURE[k.frequency]} figures`;
+
+/** Rating ranges for a KPI, from 1 to 5, e.g. ["below MYR 20,000", "MYR 20,000 – 49,999", ...]. */
+export function scaleRanges(k: Pick<Kpi, 'direction' | 'scale' | 'unit'>) {
+  const f = (n: number) => fmtKpi(n, k.unit);
+  const s = k.scale;
+  if (k.direction === 'HIGHER') {
+    // Whole-number scales read as "50,000 – 55,000"; others as "50.5 to below 55.5"
+    const upTo = (from: number, next: number) => (Number.isInteger(next) ? `${f(from)} – ${f(next - 1)}` : `${f(from)} to below ${f(next)}`);
+    return [`below ${f(s[0])}`, upTo(s[0], s[1]), upTo(s[1], s[2]), upTo(s[2], s[3]), `${f(s[3])} or more`];
+  }
+  return [`more than ${f(s[0])}`, `${f(s[0])} or less`, `${f(s[1])} or less`, `${f(s[2])} or less`, `${f(s[3])} or less`];
+}
+
+export function RatingScale({ kpi, highlight }: { kpi: Pick<Kpi, 'direction' | 'scale' | 'unit'>; highlight?: number | null }) {
+  const ranges = scaleRanges(kpi);
+  return (
+    <Space size={[6, 6]} wrap>
+      {ranges.map((r, i) => (
+        <Tooltip key={i} title={RATING_LABELS[i]}>
+          <Tag color={highlight === i + 1 ? 'purple' : undefined} style={{ margin: 0 }}>
+            <b>{i + 1}</b> · {r}
+          </Tag>
+        </Tooltip>
+      ))}
+    </Space>
+  );
+}
 
 /** Achievement against target (capped at 100% visually; the number shows the real value). */
 export function AchievementBar({ value, pace, width = 140 }: { value: number; pace?: PaceStatus; width?: number }) {
@@ -34,81 +69,135 @@ export function PaceSummary({ pace }: { pace: PaceCounts }) {
   );
 }
 
-const describeTarget = (k: Kpi) =>
-  `${k.direction === 'HIGHER' ? 'At least' : 'At most'} ${fmtKpi(k.target, k.unit)}${k.tracking === 'CUMULATIVE' ? ' by cycle end' : ''}`;
+export const RatingBadge = ({ rating }: { rating: number | null }) => rating == null
+  ? <Typography.Text type="secondary">—</Typography.Text>
+  : <Tooltip title={RATING_LABELS[rating - 1]}><Tag color={['red', 'orange', 'blue', 'green', 'purple'][rating - 1]} style={{ fontWeight: 600 }}>{rating}</Tag></Tooltip>;
 
-/** KPI table with targets, latest actuals, achievement and pace, plus check-in history. */
-export function KpiProgressTable({ review, canCheckIn, onCheckIn }: {
+/** KPI table: result so far, rating from the KPI's scale, updates done/missing, pace; expands to every period. */
+export function KpiProgressTable({ review, canUpdate, onUpdate }: {
   review: Review;
-  canCheckIn: boolean;
-  onCheckIn: (kpi: Kpi) => void;
+  canUpdate: boolean;
+  onUpdate: (kpi: Kpi, period?: string) => void;
 }) {
-  const history = (k: Kpi) => (review.checkIns ?? []).filter((c) => c.kpiId === k.id);
   return (
     <Table
       rowKey="id"
       pagination={false}
       dataSource={review.kpis}
       scroll={{ x: 'max-content' }}
-      expandable={review.checkIns ? {
-        rowExpandable: (k) => history(k).length > 0,
-        expandedRowRender: (k) => <CheckInHistory items={history(k)} unit={k.unit} />,
-        expandIcon: ({ expanded, onExpand, record, expandable }) => expandable
-          ? <Tooltip title={expanded ? 'Hide history' : 'Show history'}><Button type="text" size="small" icon={<HistoryOutlined />} onClick={(e) => onExpand(record, e)} /></Tooltip>
-          : null,
-      } : undefined}
+      expandable={{
+        expandedRowRender: (k) => <PeriodTable kpi={k} canUpdate={canUpdate} onUpdate={(p) => onUpdate(k, p)} />,
+      }}
       columns={[
         {
           title: 'KPI',
           render: (_, k) => (
             <>
               <Typography.Text strong>{k.title}</Typography.Text>
-              <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{describeTarget(k)} · weight {k.weight}%</Typography.Text></div>
+              <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{describeKpi(k)} · target {fmtKpi(k.target, k.unit)} · weight {k.weight}%</Typography.Text></div>
             </>
           ),
         },
-        { title: 'Actual', render: (_, k) => <span style={{ whiteSpace: 'nowrap' }}>{fmtKpi(k.actual, k.unit)}</span> },
-        { title: 'Achievement', render: (_, k) => <AchievementBar value={k.achievement} pace={k.pace} /> },
+        {
+          title: 'Result so far',
+          render: (_, k) => (
+            <div style={{ whiteSpace: 'nowrap' }}>
+              {fmtKpi(k.value, k.unit)}
+              {k.aggregation === 'TOTAL' && k.projected != null && k.projected !== k.value && (
+                <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>on course for {fmtKpi(k.projected, k.unit)}</Typography.Text></div>
+              )}
+            </div>
+          ),
+        },
+        {
+          title: 'Rating',
+          render: (_, k) => (
+            <Space size={4}>
+              <RatingBadge rating={k.rating} />
+              {k.projectedRating !== k.rating && <Tooltip title="If the current pace continues"><Typography.Text type="secondary" style={{ fontSize: 12 }}>→ {k.projectedRating}</Typography.Text></Tooltip>}
+            </Space>
+          ),
+        },
+        {
+          title: 'Updates',
+          render: (_, k) => (
+            <Space size={4} style={{ whiteSpace: 'nowrap' }}>
+              <Typography.Text>{k.done}/{k.periods.length}</Typography.Text>
+              {k.missing > 0 && <Tag color="red">{k.missing} missing</Tag>}
+            </Space>
+          ),
+        },
         { title: 'Pace', render: (_, k) => <StatusTag status={k.pace} /> },
-        ...(canCheckIn ? [{
+        ...(canUpdate ? [{
           title: '',
-          render: (_: unknown, k: Kpi) => <Button size="small" icon={<RiseOutlined />} onClick={() => onCheckIn(k)}>Update</Button>,
+          render: (_: unknown, k: Kpi) => <Button size="small" icon={<EditOutlined />} onClick={() => onUpdate(k)}>Enter figure</Button>,
         }] : []),
       ]}
     />
   );
 }
 
-function CheckInHistory({ items, unit }: { items: KpiCheckIn[]; unit: string }) {
+const PERIOD_STATUS: Record<KpiPeriod['status'], [string, string]> = {
+  DONE: ['Entered', 'green'],
+  MISSING: ['Missing', 'red'],
+  OPEN: ['Open now', 'blue'],
+  UPCOMING: ['Upcoming', 'default'],
+};
+
+function PeriodTable({ kpi, canUpdate, onUpdate }: { kpi: Kpi; canUpdate: boolean; onUpdate: (period: string) => void }) {
   return (
-    <Timeline
-      style={{ margin: '12px 0 0 8px' }}
-      items={items.map((c) => ({
-        children: (
-          <>
-            <b>{fmtKpi(c.value, unit)}</b> · {fmtDate(c.date)} · {c.by}
-            {c.note && <div><Typography.Text type="secondary">{c.note}</Typography.Text></div>}
-          </>
-        ),
-      }))}
-    />
+    <div style={{ padding: '4px 0 8px' }}>
+      <div style={{ marginBottom: 10 }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>Rating scale ({describeKpi(kpi).toLowerCase()}):</Typography.Text>
+        <RatingScale kpi={kpi} highlight={kpi.rating} />
+      </div>
+      <Table
+        rowKey="key"
+        size="small"
+        pagination={false}
+        dataSource={kpi.periods}
+        scroll={{ x: 'max-content' }}
+        columns={[
+          { title: kpi.frequency === 'MONTHLY' ? 'Month' : 'Period', dataIndex: 'label' },
+          { title: 'Status', render: (_, p) => <Tag color={PERIOD_STATUS[p.status][1]}>{PERIOD_STATUS[p.status][0]}</Tag> },
+          { title: 'Figure', render: (_, p) => fmtKpi(p.value, kpi.unit) },
+          { title: 'Note', render: (_, p) => p.note ?? '' },
+          { title: 'Entered', render: (_, p) => (p.by ? `${p.by}, ${fmtDate(p.updatedAt)}` : '') },
+          ...(canUpdate ? [{
+            title: '',
+            render: (_: unknown, p: KpiPeriod) => p.status !== 'UPCOMING' && (
+              <Button size="small" type={p.status === 'DONE' ? 'text' : 'link'} onClick={() => onUpdate(p.key)}>{p.status === 'DONE' ? 'Correct' : 'Enter'}</Button>
+            ),
+          }] : []),
+        ]}
+      />
+    </div>
   );
 }
 
-/** Modal to log a KPI's latest value. Calls onSaved with the updated review. */
-export function CheckInModal({ review, kpi, onClose, onSaved }: {
+/** Modal to enter or correct a KPI's figure for one period. Calls onSaved with the updated review. */
+export function EntryModal({ review, kpi, period, onClose, onSaved }: {
   review: Review;
   kpi: Kpi | null;
+  period?: string;
   onClose: () => void;
   onSaved: (r: Review) => void;
 }) {
   const { message } = App.useApp();
   const [saving, setSaving] = useState(false);
-  const submit = async (v: { value: number; note?: string }) => {
+  const [form] = Form.useForm<{ period: string; value: number; note?: string }>();
+  const selected = Form.useWatch('period', form);
+
+  if (!kpi) return null;
+  const open = kpi.periods.filter((p) => p.status !== 'UPCOMING');
+  const initial = period ?? (open.find((p) => p.status === 'MISSING') ?? open.find((p) => p.status === 'OPEN') ?? open[open.length - 1])?.key;
+  const current = kpi.periods.find((p) => p.key === selected);
+
+  const submit = async (v: { period: string; value: number; note?: string }) => {
     setSaving(true);
     try {
-      onSaved(await api<Review>(`/reviews/${review.id}/check-ins`, { body: { kpiId: kpi!.id, ...v } }));
-      message.success('Progress updated');
+      onSaved(await api<Review>(`/reviews/${review.id}/entries`, { body: { kpiId: kpi.id, ...v } }));
+      message.success('Figure saved');
       onClose();
     } catch (e) {
       message.error((e as Error).message);
@@ -116,21 +205,35 @@ export function CheckInModal({ review, kpi, onClose, onSaved }: {
       setSaving(false);
     }
   };
+
   return (
-    <Modal title={kpi ? `Update · ${kpi.title}` : ''} open={!!kpi} onCancel={onClose} footer={null} destroyOnHidden>
-      {kpi && (
-        <Form layout="vertical" onFinish={submit} initialValues={{ value: kpi.actual ?? undefined }} requiredMark={false}>
-          <Typography.Paragraph type="secondary">
-            Target: {describeTarget(kpi)}.{' '}
-            {kpi.tracking === 'CUMULATIVE' ? 'Enter the running total so far.' : 'Enter the current level.'}
-          </Typography.Paragraph>
-          <Form.Item name="value" label={`Current value (${kpi.unit})`} rules={[{ required: true }]}>
-            <InputNumber min={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="note" label="Note (optional)"><Input.TextArea rows={2} placeholder="What changed, any blockers" /></Form.Item>
-          <Button type="primary" htmlType="submit" loading={saving} block>Save update</Button>
-        </Form>
-      )}
+    <Modal title={`Enter figure · ${kpi.title}`} open onCancel={onClose} footer={null} destroyOnHidden>
+      <Typography.Paragraph type="secondary">
+        {FREQUENCY_LABEL[kpi.frequency]} figure. The KPI result is the {describeKpi(kpi).toLowerCase()}.
+      </Typography.Paragraph>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={submit}
+        requiredMark={false}
+        initialValues={{ period: initial, value: kpi.periods.find((p) => p.key === initial)?.value ?? undefined, note: kpi.periods.find((p) => p.key === initial)?.note ?? undefined }}
+        onValuesChange={(changed) => {
+          if (changed.period) {
+            const p = kpi.periods.find((x) => x.key === changed.period);
+            form.setFieldsValue({ value: p?.value ?? undefined, note: p?.note ?? undefined });
+          }
+        }}
+      >
+        <Form.Item name="period" label={kpi.frequency === 'MONTHLY' ? 'Month' : 'Period'} rules={[{ required: true }]}>
+          <Select options={open.map((p) => ({ value: p.key, label: `${p.label}${p.status === 'DONE' ? ` (entered: ${fmtKpi(p.value, kpi.unit)})` : p.status === 'MISSING' ? ' (missing)' : ''}` }))} />
+        </Form.Item>
+        <Form.Item name="value" label={`Figure for this period (${kpi.unit})`} rules={[{ required: true }]}
+          extra={current?.status === 'DONE' ? 'Saving replaces the figure entered earlier.' : undefined}>
+          <InputNumber style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item name="note" label="Note (optional)"><Input.TextArea rows={2} placeholder="What drove the result, any blockers" /></Form.Item>
+        <Button type="primary" htmlType="submit" loading={saving} block>Save figure</Button>
+      </Form>
     </Modal>
   );
 }
@@ -139,45 +242,83 @@ export interface KpiDraft {
   title: string;
   weight: number;
   unit: string;
-  target: number;
+  frequency: KpiFrequency;
+  aggregation: KpiAggregation;
   direction: Kpi['direction'];
-  tracking: Kpi['tracking'];
+  scale: [number, number, number, number];
 }
 
-export const blankKpi = (weight: number): KpiDraft => ({ title: '', weight, unit: '%', target: 100, direction: 'HIGHER', tracking: 'LEVEL' });
-
-/** Form.List rows for defining measurable KPIs (used inside a Form with a `kpis` field). */
+/** Form.List cards for defining KPIs (used inside a Form with a `kpis` field). */
 export function KpiFields() {
   return (
     <Form.List name="kpis">
       {(fields, { add, remove }) => (
         <>
-          {fields.map((f) => (
-            <div key={f.key} className="kpi-row">
-              <Form.Item name={[f.name, 'title']} rules={[{ required: true, min: 3, message: 'KPI name' }]} style={{ flex: '2 1 220px' }}>
-                <Input placeholder="KPI, e.g. Sales closed" />
+          {fields.map((f, i) => (
+            <Card
+              key={f.key}
+              size="small"
+              style={{ marginBottom: 12 }}
+              title={`KPI ${i + 1}`}
+              extra={fields.length > 1 && <Button type="text" size="small" icon={<MinusCircleOutlined />} onClick={() => remove(f.name)}>Remove</Button>}
+            >
+              <Row gutter={12}>
+                <Col xs={24} md={12}><Form.Item name={[f.name, 'title']} label="KPI" rules={[{ required: true, min: 3 }]}><Input placeholder="e.g. Average monthly sales" /></Form.Item></Col>
+                <Col xs={12} md={6}><Form.Item name={[f.name, 'unit']} label="Unit" rules={[{ required: true }]}><Input placeholder="MYR, %, tickets" /></Form.Item></Col>
+                <Col xs={12} md={6}><Form.Item name={[f.name, 'weight']} label="Weight" rules={[{ required: true }]}><InputNumber min={5} max={100} addonAfter="%" style={{ width: '100%' }} /></Form.Item></Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name={[f.name, 'frequency']} label="Update" rules={[{ required: true }]}>
+                    <Select options={(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY'] as const).map((v) => ({ value: v, label: FREQUENCY_LABEL[v] }))} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name={[f.name, 'aggregation']} label="Result is the" rules={[{ required: true }]}>
+                    <Select options={[{ value: 'AVERAGE', label: 'Average of the figures' }, { value: 'TOTAL', label: 'Total of the figures' }, { value: 'LATEST', label: 'Latest figure' }]} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name={[f.name, 'direction']} label="Better when" rules={[{ required: true }]}>
+                    <Select options={[{ value: 'HIGHER', label: 'Higher (e.g. sales)' }, { value: 'LOWER', label: 'Lower (e.g. defects)' }]} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item noStyle shouldUpdate={(a, b) => a.kpis?.[f.name]?.direction !== b.kpis?.[f.name]?.direction}>
+                {({ getFieldValue }) => {
+                  const lower = getFieldValue(['kpis', f.name, 'direction']) === 'LOWER';
+                  return (
+                    <>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        Rating scale: the result {lower ? 'at or below' : 'at or above'} each value earns that rating; anything else is 1. Rating 3 is the target.
+                      </Typography.Text>
+                      <Row gutter={12} style={{ marginTop: 6 }}>
+                        {[2, 3, 4, 5].map((rating, j) => (
+                          <Col xs={12} md={6} key={rating}>
+                            <Form.Item name={[f.name, 'scale', j]} label={`Rating ${rating} ${lower ? 'at most' : 'from'}`} rules={[{ required: true }]} tooltip={RATING_LABELS[rating - 1]}>
+                              <InputNumber style={{ width: '100%' }} />
+                            </Form.Item>
+                          </Col>
+                        ))}
+                      </Row>
+                    </>
+                  );
+                }}
               </Form.Item>
-              <Form.Item name={[f.name, 'direction']} style={{ flex: '0 0 120px' }}>
-                <Select options={[{ value: 'HIGHER', label: 'At least' }, { value: 'LOWER', label: 'At most' }]} />
-              </Form.Item>
-              <Form.Item name={[f.name, 'target']} rules={[{ required: true, message: 'Target' }]} style={{ flex: '0 0 110px' }}>
-                <InputNumber min={0} placeholder="Target" style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name={[f.name, 'unit']} rules={[{ required: true, message: 'Unit' }]} style={{ flex: '0 0 100px' }}>
-                <Input placeholder="%, MYR, tickets" />
-              </Form.Item>
-              <Form.Item name={[f.name, 'tracking']} style={{ flex: '0 0 170px' }}>
-                <Select options={[{ value: 'CUMULATIVE', label: 'Adds up over cycle' }, { value: 'LEVEL', label: 'Level to keep' }]} />
-              </Form.Item>
-              <Form.Item name={[f.name, 'weight']} rules={[{ required: true }]} style={{ flex: '0 0 100px' }}>
-                <InputNumber min={5} max={100} addonAfter="%" style={{ width: '100%' }} />
-              </Form.Item>
-              {fields.length > 1 && <MinusCircleOutlined onClick={() => remove(f.name)} style={{ marginTop: 9 }} />}
-            </div>
+            </Card>
           ))}
-          <Button type="dashed" onClick={() => add(blankKpi(10))} icon={<PlusOutlined />}>Add KPI</Button>
+          <Button type="dashed" block onClick={() => add(blankKpi(10))} icon={<PlusOutlined />}>Add KPI</Button>
         </>
       )}
     </Form.List>
   );
 }
+
+// Scale left empty so the form asks for it
+export const blankKpi = (weight: number): KpiDraft => ({
+  title: '', weight, unit: '', frequency: 'MONTHLY', aggregation: 'AVERAGE', direction: 'HIGHER', scale: [] as unknown as KpiDraft['scale'],
+});
+
+/** The sales example: average monthly sales, RM50,000 target. */
+export const salesKpiExample = (weight: number): KpiDraft => ({
+  title: 'Average monthly sales', weight, unit: 'MYR', frequency: 'MONTHLY', aggregation: 'AVERAGE', direction: 'HIGHER',
+  scale: [20000, 50000, 55001, 60001],
+});
